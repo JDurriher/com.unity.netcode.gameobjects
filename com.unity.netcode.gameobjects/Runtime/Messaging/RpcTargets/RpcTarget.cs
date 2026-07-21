@@ -439,7 +439,7 @@ namespace Unity.Netcode
             }
             target.Clear();
 
-            using var asASet = new NativeHashSet<ulong>(excludedClientIds.Length, Allocator.Temp);
+            using var asASet = new NativeParallelHashSet<ulong>(excludedClientIds.Length, Allocator.Temp);
             foreach (var clientId in excludedClientIds)
             {
                 asASet.Add(clientId);
@@ -533,7 +533,7 @@ namespace Unity.Netcode
             }
             target.Clear();
 
-            using var asASet = new NativeHashSet<ulong>(m_NetworkManager.ConnectedClientsIds.Count, Allocator.Temp);
+            using var asASet = new NativeParallelHashSet<ulong>(m_NetworkManager.ConnectedClientsIds.Count, Allocator.Temp);
             foreach (var clientId in excludedClientIds)
             {
                 asASet.Add(clientId);
