@@ -458,6 +458,16 @@ namespace Unity.Netcode
         internal static event Action OnSingletonReady;
 
         /// <summary>
+        /// This callback is invoked when the local server has finished initialization.
+        /// </summary>
+        public event Action OnHostInitialized = null;
+
+        /// <summary>
+        /// The callback to invoke once the local client has finished initialization.
+        /// </summary>
+        public event Action OnClientInitialized = null;
+
+        /// <summary>
         /// This callback is invoked when the local server is started and listening for incoming connections.
         /// </summary>
         public event Action OnServerStarted = null;
@@ -968,7 +978,6 @@ namespace Unity.Netcode
             ConnectionManager.LocalClient.ClientId = ServerClientId;
 
             Initialize(true);
-
             try
             {
                 IsListening = NetworkConfig.NetworkTransport.StartServer();
@@ -995,7 +1004,7 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Starts a client
+        /// Starts a client (Edit: I'm breaking this out into two functions, this one say we've been initialized, the second function say's we're started)
         /// </summary>
         /// <returns>(<see cref="true"/>/<see cref="false"/>) returns true if <see cref="NetworkManager"/> started in client mode successfully.</returns>
         public bool StartClient()
@@ -1013,7 +1022,16 @@ namespace Unity.Netcode
             ConnectionManager.LocalClient.SetRole(false, true, this);
 
             Initialize(false);
+            OnClientInitialized?.Invoke();
+            return true;
+        }
 
+        /// <summary>
+        /// This is called after the addressable scenes have been setup, this is where we finish starting the client
+        /// </summary>
+        /// <returns>(<see cref="true"/>/<see cref="false"/>) returns true if <see cref="NetworkManager"/> started in client mode successfully.</returns>
+        public bool CompleteClientStart()
+        {
             try
             {
                 IsListening = NetworkConfig.NetworkTransport.StartClient();
@@ -1055,6 +1073,16 @@ namespace Unity.Netcode
 
             ConnectionManager.LocalClient.SetRole(true, true, this);
             Initialize(true);
+            OnHostInitialized?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// This is called after the addressable scenes have been setup, this is where we finish starting the host
+        /// </summary>
+        /// <returns>(<see cref="true"/>/<see cref="false"/>) returns true if <see cref="NetworkManager"/> started in host mode successfully.</returns>
+        public bool CompleteHostStart()
+        {
             try
             {
                 IsListening = NetworkConfig.NetworkTransport.StartServer();
