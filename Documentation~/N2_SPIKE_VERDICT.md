@@ -98,6 +98,8 @@ On the spike branch (**no D** — stock `NativeHashSet` at `NetworkMessageManage
 
 Sandbox manifest pins were removed after the probe (restored to transitive resolution).
 
+**Addendum — D's origin identified (post-session, user observation).** After the pin restore dropped the sandbox back to the collections **1.x** lineage (NGO 1.11 → transport 1.4.0), the sandbox editor raised Unity's **API Updater** dialog offering to rewrite exactly the two D sites (`RpcTarget.cs`, `NetworkMessageManager.cs`) — `NativeHashSet<T>` is the obsolete-flagged rename shim for `NativeParallelHashSet<T>` in collections 1.x, and the updater's rewrite is byte-for-byte what Category D is. So D was the API updater's fix (or its manual equivalent) for a collections-1.x-era resolution that Abyssal's actual pin (2.5.3, where `NativeHashSet` is a real current type) never needed. **Decline this dialog whenever it reappears in the sandbox** — accepting would edit the fork working tree and re-create D on the spike branch. (This dialog, being modal, is also what wedged the sandbox editor at session end.)
+
 ---
 
 ## Target patch set for N3
