@@ -31,6 +31,10 @@ namespace Unity.Netcode.Transports.UTP
         public const int PerMessageOverhead = sizeof(int);
 
         internal const int MinimumMinimumCapacity = 4096;
+        // int.MaxValue is odd and maximum must be even.
+        // This is safe to be so large as the queue is dynamically allocated.
+        // It's very unlikely that the actual send queue will ever grow this large
+        internal const int MaximumMaximumCapacity = int.MaxValue - 1;
 
         // Indices into m_HeadTailIndicies.
         private const int k_HeadInternalIndex = 0;
@@ -94,11 +98,7 @@ namespace Unity.Netcode.Transports.UTP
         /// <summary>Write a raw buffer to a DataStreamWriter.</summary>
         private unsafe void WriteBytes(ref DataStreamWriter writer, byte* data, int length)
         {
-#if UTP_TRANSPORT_2_0_ABOVE
             writer.WriteBytesUnsafe(data, length);
-#else
-            writer.WriteBytes(data, length);
-#endif
         }
 
         /// <summary>Append data at the tail of the queue. No safety checks.</summary>
@@ -106,12 +106,7 @@ namespace Unity.Netcode.Transports.UTP
         {
             unsafe
             {
-#if UTP_TRANSPORT_2_0_ABOVE
                 var writer = new DataStreamWriter(m_Data.GetUnsafePtr() + TailIndex, Capacity - TailIndex);
-#else
-                var writer = new DataStreamWriter((byte*)m_Data.GetUnsafePtr() + TailIndex, Capacity - TailIndex);
-#endif
-
 
                 writer.WriteInt(data.Count);
 
@@ -150,11 +145,7 @@ namespace Unity.Netcode.Transports.UTP
             {
                 unsafe
                 {
-#if UTP_TRANSPORT_2_0_ABOVE
                     UnsafeUtility.MemMove(m_Data.GetUnsafePtr(), m_Data.GetUnsafePtr() + HeadIndex, Length);
-#else
-                    UnsafeUtility.MemMove(m_Data.GetUnsafePtr(), (byte*)m_Data.GetUnsafePtr() + HeadIndex, Length);
-#endif
                 }
 
                 TailIndex = Length;
@@ -240,12 +231,8 @@ namespace Unity.Netcode.Transports.UTP
                 if (bytesToWrite > softMaxBytes && bytesToWrite <= writer.Capacity)
                 {
                     writer.WriteInt(messageLength);
-
-#if UTP_TRANSPORT_2_0_ABOVE
                     WriteBytes(ref writer, m_Data.GetUnsafePtr() + reader.GetBytesRead(), messageLength);
-#else
-                    WriteBytes(ref writer, (byte*)m_Data.GetUnsafePtr() + reader.GetBytesRead(), messageLength);
-#endif
+
                     return bytesToWrite;
                 }
                 else
@@ -261,12 +248,7 @@ namespace Unity.Netcode.Transports.UTP
                         if (bytesWritten + bytesToWrite <= softMaxBytes)
                         {
                             writer.WriteInt(messageLength);
-
-#if UTP_TRANSPORT_2_0_ABOVE
                             WriteBytes(ref writer, m_Data.GetUnsafePtr() + reader.GetBytesRead(), messageLength);
-#else
-                            WriteBytes(ref writer, (byte*)m_Data.GetUnsafePtr() + reader.GetBytesRead(), messageLength);
-#endif
 
                             readerOffset += bytesToWrite;
                             bytesWritten += bytesToWrite;
@@ -310,12 +292,7 @@ namespace Unity.Netcode.Transports.UTP
 
             unsafe
             {
-
-#if UTP_TRANSPORT_2_0_ABOVE
                 WriteBytes(ref writer, m_Data.GetUnsafePtr() + HeadIndex, copyLength);
-#else
-                WriteBytes(ref writer, (byte*)m_Data.GetUnsafePtr() + HeadIndex, copyLength);
-#endif
             }
 
             return copyLength;

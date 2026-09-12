@@ -1,12 +1,25 @@
 using NUnit.Framework;
 using Unity.Netcode.Transports.UTP;
+using Unity.Networking.Transport;
 using UnityEngine;
 using UnityEngine.TestTools;
 
 namespace Unity.Netcode.EditorTests
 {
-    public class UnityTransportTests
+    internal class UnityTransportTests
     {
+        [SetUp]
+        public void OnSetup()
+        {
+            ILPPMessageProvider.IntegrationTestNoMessages = true;
+        }
+
+        [TearDown]
+        public void OnTearDown()
+        {
+            ILPPMessageProvider.IntegrationTestNoMessages = false;
+        }
+
         // Check that starting an IPv4 server succeeds.
         [Test]
         public void UnityTransport_BasicInitServer_IPv4()
@@ -115,17 +128,10 @@ namespace Unity.Netcode.EditorTests
             UnityTransport transport = new GameObject().AddComponent<UnityTransport>();
             transport.Initialize();
 
-            transport.SetConnectionData("127.0.0.", 4242, "127.0.0.");
+            transport.SetConnectionData("127.0.0.1", 4242, "foobar");
 
             Assert.False(transport.StartServer());
-
-            LogAssert.Expect(LogType.Error, "Invalid network endpoint: 127.0.0.:4242.");
-
-#if HOSTNAME_RESOLUTION_AVAILABLE && UTP_TRANSPORT_2_4_ABOVE
-            LogAssert.Expect(LogType.Error, $"Listen network address (127.0.0.) is not a valid {Networking.Transport.NetworkFamily.Ipv4} or {Networking.Transport.NetworkFamily.Ipv6} address!");
-#else
-            LogAssert.Expect(LogType.Error, "Network listen address (127.0.0.) is Invalid!");
-#endif
+            LogAssert.Expect(LogType.Error, "Invalid listen endpoint: foobar:4242. Note that the listen endpoint MUST be an IP address (not a hostname).");
 
             transport.SetConnectionData("127.0.0.1", 4242, "127.0.0.1");
             Assert.True(transport.StartServer());
@@ -146,58 +152,124 @@ namespace Unity.Netcode.EditorTests
             transport.Shutdown();
         }
 
-        // Check that StartClient returns false with bad connection data.
-        [Test]
-        public void UnityTransport_StartClientFailsWithBadAddress()
-        {
-            UnityTransport transport = new GameObject().AddComponent<UnityTransport>();
-            transport.Initialize();
-
-            transport.SetConnectionData("foobar", 4242);
-            Assert.False(transport.StartClient());
-            LogAssert.Expect(LogType.Error, "Invalid network endpoint: foobar:4242.");
-#if HOSTNAME_RESOLUTION_AVAILABLE && UTP_TRANSPORT_2_4_ABOVE
-            LogAssert.Expect(LogType.Error, "Target server network address (foobar) is not a valid Fully Qualified Domain Name!");
-#else
-            LogAssert.Expect(LogType.Error, "Target server network address (foobar) is Invalid!");
-#endif
-
-            transport.Shutdown();
-        }
-
-#if UTP_TRANSPORT_2_0_ABOVE
         [Test]
         public void UnityTransport_EmptySecurityStringsShouldThrow([Values("", null)] string cert, [Values("", null)] string secret)
         {
-            var supportingGO = new GameObject();
+            var supportingGo = new GameObject();
             try
             {
-                var networkManager = supportingGO.AddComponent<NetworkManager>(); // NM is required for UTP to work with certificates.
+                var networkManager = supportingGo.AddComponent<NetworkManager>(); // NM is required for UTP to work with certificates.
                 networkManager.NetworkConfig = new NetworkConfig();
-                UnityTransport transport = supportingGO.AddComponent<UnityTransport>();
+                UnityTransport transport = supportingGo.AddComponent<UnityTransport>();
                 networkManager.NetworkConfig.NetworkTransport = transport;
-                transport.Initialize();
+                transport.Initialize(networkManager);
                 transport.SetServerSecrets(serverCertificate: cert, serverPrivateKey: secret);
 
                 // Use encryption, but don't set certificate and check for exception
                 transport.UseEncryption = true;
                 Assert.Throws<System.Exception>(() =>
                 {
-                    networkManager.StartServer();
+                    transport.StartServer();
                 });
                 // Make sure StartServer failed
-                Assert.False(transport.NetworkDriver.IsCreated);
+                Assert.False(transport.GetNetworkDriver().IsCreated);
                 Assert.False(networkManager.IsServer);
                 Assert.False(networkManager.IsListening);
             }
             finally
             {
-                if (supportingGO != null)
+                if (supportingGo != null)
                 {
-                    Object.DestroyImmediate(supportingGO);
+                    Object.DestroyImmediate(supportingGo);
                 }
             }
         }
+
+        [Test]
+        public void UnityTransport_BindClientToSpecificPort()
+        {
+            UnityTransport transport = new GameObject().AddComponent<UnityTransport>();
+            transport.Initialize();
+            transport.SetConnectionData("127.0.0.1", 4242);
+            transport.ConnectionData.ClientBindPort = 14242;
+
+            Assert.True(transport.StartClient());
+            Assert.AreEqual(14242, transport.GetLocalEndpoint().Port);
+
+            transport.Shutdown();
+        }
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        private static readonly (string, bool)[] k_HostnameChecks =
+        {
+            ("localhost", true),
+            ("unity3d.com", true),
+            ("unity3d.com.", true),
+            (string.Empty, false),
+            ("unity3d.com/test", false),
+            ("test%123.com", false),
+        };
+
+        [Test]
+        [TestCaseSource(nameof(k_HostnameChecks))]
+        public void UnityTransport_HostnameValidation((string, bool) testCase)
+        {
+            var (hostname, isValid) = testCase;
+
+            UnityTransport transport = new GameObject().AddComponent<UnityTransport>();
+            transport.Initialize();
+
+            if (!isValid)
+            {
+                LogAssert.Expect(LogType.Error, $"Provided connection address \"{hostname}\" is not a valid hostname.");
+            }
+
+            transport.SetConnectionData(hostname, 4242);
+            Assert.AreEqual(isValid, transport.StartClient());
+
+            transport.Shutdown();
+        }
 #endif
+
+        private class IPCDriverConstructor : INetworkStreamDriverConstructor
+        {
+            public void CreateDriver(
+                UnityTransport transport,
+                out NetworkDriver driver,
+                out NetworkPipeline unreliableFragmentedPipeline,
+                out NetworkPipeline unreliableSequencedFragmentedPipeline,
+                out NetworkPipeline reliableSequencedPipeline)
+            {
+                var settings = transport.GetDefaultNetworkSettings();
+                driver = NetworkDriver.Create(new IPCNetworkInterface(), settings);
+
+#if MULTIPLAYER_TOOLS
+                driver.RegisterPipelineStage(new NetworkMetricsPipelineStage());
+#endif
+
+                transport.GetDefaultPipelineConfigurations(
+                    out var unreliableFragmentedPipelineStages,
+                    out var unreliableSequencedFragmentedPipelineStages,
+                    out var reliableSequencedPipelineStages);
+
+                unreliableFragmentedPipeline = driver.CreatePipeline(unreliableFragmentedPipelineStages);
+                unreliableSequencedFragmentedPipeline = driver.CreatePipeline(unreliableSequencedFragmentedPipelineStages);
+                reliableSequencedPipeline = driver.CreatePipeline(reliableSequencedPipelineStages);
+            }
+        }
+
+        [Test]
+        public void UnityTransport_CustomDriverConstructorWithDefaultPipelines()
+        {
+            UnityTransport transport = new GameObject().AddComponent<UnityTransport>();
+            UnityTransport.s_DriverConstructor = new IPCDriverConstructor();
+            transport.Initialize();
+
+            Assert.True(transport.StartServer());
+
+            transport.Shutdown();
+
+            UnityTransport.s_DriverConstructor = null;
+        }
     }
 }

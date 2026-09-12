@@ -3,14 +3,18 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Unity.Netcode.TestHelpers.Runtime;
 using Unity.Netcode.Transports.UTP;
+#if HOSTNAME_RESOLUTION_AVAILABLE
+using Unity.Networking.Transport;
+#endif
 using UnityEngine;
 using UnityEngine.TestTools;
 using static Unity.Netcode.RuntimeTests.UnityTransportTestHelpers;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public class UnityTransportConnectionTests
+    internal class UnityTransportConnectionTests
     {
         // For tests using multiple clients.
         private const int k_NumClients = 5;
@@ -18,6 +22,13 @@ namespace Unity.Netcode.RuntimeTests
         private UnityTransport[] m_Clients = new UnityTransport[k_NumClients];
         private List<TransportEvent> m_ServerEvents;
         private List<TransportEvent>[] m_ClientsEvents = new List<TransportEvent>[k_NumClients];
+
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            // TODO: [CmbServiceTests] if this test is deemed needed to test against the CMB server then update this test.
+            NetcodeIntegrationTestHelpers.IgnoreIfServiceEnviromentVariableSet();
+        }
 
         [UnityTearDown]
         public IEnumerator Cleanup()
@@ -34,7 +45,7 @@ namespace Unity.Netcode.RuntimeTests
                 if (transport)
                 {
                     transport.Shutdown();
-                    UnityEngine.Object.DestroyImmediate(transport);
+                    UnityEngine.Object.DestroyImmediate(transport.gameObject);
                 }
             }
 
@@ -43,42 +54,18 @@ namespace Unity.Netcode.RuntimeTests
                 transportEvents?.Clear();
             }
 
+            UnityTransportTestComponent.CleanUp();
             yield return null;
         }
 
-        // Check that invalid endpoint addresses are detected and return false if detected
-        [Test]
-        public void DetectInvalidEndpoint()
-        {
-            using var netcodeLogAssert = new NetcodeLogAssert(true);
-            InitializeTransport(out m_Server, out m_ServerEvents);
-            InitializeTransport(out m_Clients[0], out m_ClientsEvents[0]);
-            m_Server.ConnectionData.Address = "Fubar";
-            m_Server.ConnectionData.ServerListenAddress = "Fubar";
-            m_Clients[0].ConnectionData.Address = "MoreFubar";
-            Assert.False(m_Server.StartServer(), "Server failed to detect invalid endpoint!");
-            Assert.False(m_Clients[0].StartClient(), "Client failed to detect invalid endpoint!");
-#if HOSTNAME_RESOLUTION_AVAILABLE && UTP_TRANSPORT_2_4_ABOVE
-            LogAssert.Expect(LogType.Error, $"Listen network address ({m_Server.ConnectionData.Address}) is not a valid {Networking.Transport.NetworkFamily.Ipv4} or {Networking.Transport.NetworkFamily.Ipv6} address!");
-            LogAssert.Expect(LogType.Error, $"Target server network address ({m_Clients[0].ConnectionData.Address}) is not a valid Fully Qualified Domain Name!");
-
-            m_Server.ConnectionData.Address = "my.fubar.com";
-            m_Server.ConnectionData.ServerListenAddress = "my.fubar.com";
-            Assert.False(m_Server.StartServer(), "Server failed to detect invalid endpoint!");
-            LogAssert.Expect(LogType.Error, $"While ({m_Server.ConnectionData.Address}) is a valid Fully Qualified Domain Name, you must use a " +
-                $"valid {Networking.Transport.NetworkFamily.Ipv4} or {Networking.Transport.NetworkFamily.Ipv6} address when binding and listening for connections!");
-#else
-            netcodeLogAssert.LogWasReceived(LogType.Error, $"Network listen address ({m_Server.ConnectionData.Address}) is Invalid!");
-            netcodeLogAssert.LogWasReceived(LogType.Error, $"Target server network address ({m_Clients[0].ConnectionData.Address}) is Invalid!");
-#endif
-        }
-
-        // Check connection with a single client.
+        // Check connection with a single client (IP address).
         [UnityTest]
-        public IEnumerator ConnectSingleClient()
+        public IEnumerator ConnectSingleClient_IPAddress()
         {
             InitializeTransport(out m_Server, out m_ServerEvents);
             InitializeTransport(out m_Clients[0], out m_ClientsEvents[0]);
+
+            m_Clients[0].SetConnectionData("127.0.0.1", 7777);
 
             m_Server.StartServer();
             m_Clients[0].StartClient();
@@ -91,6 +78,109 @@ namespace Unity.Netcode.RuntimeTests
 
             yield return null;
         }
+
+        // Check connection with a single WebSocket client (IP address).
+        [UnityTest]
+        public IEnumerator ConnectSingleClient_WebSocket_IPAddress()
+        {
+            InitializeTransport(out m_Server, out m_ServerEvents);
+            InitializeTransport(out m_Clients[0], out m_ClientsEvents[0]);
+
+            m_Server.UseWebSockets = true;
+            m_Clients[0].UseWebSockets = true;
+
+            m_Clients[0].SetConnectionData("127.0.0.1", 7777);
+
+            m_Server.StartServer();
+            m_Clients[0].StartClient();
+
+            yield return WaitForNetworkEvent(NetworkEvent.Connect, m_ClientsEvents[0]);
+
+            // Check we've received Connect event on server too.
+            Assert.AreEqual(1, m_ServerEvents.Count);
+            Assert.AreEqual(NetworkEvent.Connect, m_ServerEvents[0].Type);
+
+            yield return null;
+        }
+
+        // Check connection with a single WebSocket client (IP address and path).
+        [UnityTest]
+        public IEnumerator ConnectSingleClient_WebSocket_IPAddressAndPath()
+        {
+            InitializeTransport(out m_Server, out m_ServerEvents);
+            InitializeTransport(out m_Clients[0], out m_ClientsEvents[0]);
+
+            m_Server.UseWebSockets = true;
+            m_Clients[0].UseWebSockets = true;
+
+            m_Clients[0].SetConnectionData("127.0.0.1", 7777);
+            m_Clients[0].ConnectionData.WebSocketPath = "/test";
+            m_Server.ConnectionData.WebSocketPath = "/test";
+
+            m_Server.StartServer();
+            m_Clients[0].StartClient();
+
+            yield return WaitForNetworkEvent(NetworkEvent.Connect, m_ClientsEvents[0]);
+
+            // Check we've received Connect event on server too.
+            Assert.AreEqual(1, m_ServerEvents.Count);
+            Assert.AreEqual(NetworkEvent.Connect, m_ServerEvents[0].Type);
+
+            yield return null;
+        }
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        // Check connection with a single client (hostname).
+        [UnityTest]
+        public IEnumerator ConnectSingleClient_Hostname()
+        {
+            InitializeTransport(out m_Server, out m_ServerEvents);
+            InitializeTransport(out m_Clients[0], out m_ClientsEvents[0]);
+
+            // We don't know if localhost will resolve to 127.0.0.1 or ::1 (or even a device LAN
+            // IP on some Android versions), so we wait until we know before starting the server.
+            // We poll until GetLocalEndpoint() returns a valid endpoint rather than assuming one
+            // frame is always enough — resolution may span multiple driver updates on some platforms.
+
+            // We'll need to retry connection requests most likely so make this fast.
+            m_Clients[0].ConnectTimeoutMS = 50;
+
+            m_Clients[0].SetConnectionData("localhost", 7777);
+            m_Clients[0].StartClient();
+
+            // Wait until hostname resolution has completed and the driver has bound.
+            // On some Android devices "localhost" can resolve to the device's LAN IP rather than
+            // a loopback address, so we use the actual resolved address instead of hardcoding
+            // "127.0.0.1" or "::1" based solely on the address family.
+            NetworkEndpoint endpoint;
+            var resolutionDeadline = Time.realtimeSinceStartup + 2f;
+            do
+            {
+                yield return null;
+                endpoint = m_Clients[0].GetLocalEndpoint();
+            } while (endpoint.Family == NetworkFamily.Invalid &&
+                     Time.realtimeSinceStartup < resolutionDeadline);
+
+            Assert.AreNotEqual(NetworkFamily.Invalid, endpoint.Family,
+                "Timed out waiting for localhost hostname resolution to complete.");
+
+            // Use the wildcard listen address for the resolved address family. This handles
+            // cases where "localhost" resolves to a non-loopback address (e.g. a device's LAN
+            // IP on some Android versions) and avoids relying on the exact IP in the local
+            // endpoint (which may be a wildcard 0.0.0.0 when UTP binds before routing).
+            var listenAddress = endpoint.Family == NetworkFamily.Ipv6 ? "::" : "0.0.0.0";
+            m_Server.SetConnectionData(listenAddress, 7777, listenAddress);
+            m_Server.StartServer();
+
+            yield return WaitForNetworkEvent(NetworkEvent.Connect, m_ClientsEvents[0]);
+
+            // Check we've received Connect event on server too.
+            Assert.AreEqual(1, m_ServerEvents.Count);
+            Assert.AreEqual(NetworkEvent.Connect, m_ServerEvents[0].Type);
+
+            yield return null;
+        }
+#endif
 
         // Check connection with multiple clients.
         [UnityTest]
@@ -173,8 +263,6 @@ namespace Unity.Netcode.RuntimeTests
             // Check that all clients got a Disconnect event.
             Assert.True(m_ClientsEvents.All(evs => evs.Count == 2));
             Assert.True(m_ClientsEvents.All(evs => evs[1].Type == NetworkEvent.Disconnect));
-
-            yield return null;
         }
 
         // Check client disconnection from a single client.
@@ -257,8 +345,6 @@ namespace Unity.Netcode.RuntimeTests
             // Check we haven't received anything else on the client or server.
             Assert.AreEqual(m_ServerEvents.Count, previousServerEventsCount);
             Assert.AreEqual(m_ClientsEvents[0].Count, previousClientEventsCount);
-
-            yield return null;
         }
 
         // Check that client re-disconnects are no-ops.
@@ -288,8 +374,6 @@ namespace Unity.Netcode.RuntimeTests
             // Check we haven't received anything else on the client or server.
             Assert.AreEqual(m_ServerEvents.Count, previousServerEventsCount);
             Assert.AreEqual(m_ClientsEvents[0].Count, previousClientEventsCount);
-
-            yield return null;
         }
 
         // Check connection with different server/listen addresses.
@@ -345,7 +429,10 @@ namespace Unity.Netcode.RuntimeTests
         }
 
         // Check client disconnection with data in send queue.
-        [UnityTest]
+        // Excluded on iOS: sending Unreliable data then immediately disconnecting is a race on slow
+        // iOS CI devices (the unreliable packet can be dropped), so it flakes with a "Timed out while
+        // waiting for network event" even after raising the mobile timeout. Tracked by MTT-15433.
+        [UnityTest, UnityPlatform(exclude = new[] { RuntimePlatform.IPhonePlayer })]
         public IEnumerator ClientDisconnectWithDataInQueue()
         {
             InitializeTransport(out m_Server, out m_ServerEvents);

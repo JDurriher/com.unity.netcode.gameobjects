@@ -1,34 +1,41 @@
-using System;
+using System.Collections;
 using NUnit.Framework;
 using Unity.Netcode.TestHelpers.Runtime;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public sealed class NetworkVariableNameTests
+    internal class NetworkVariableNameTests : NetcodeIntegrationTest
     {
+        protected override int NumberOfClients => 1;
         private NetworkVariableNameComponent m_NetworkVariableNameComponent;
 
-        [SetUp]
-        public void SetUp()
-        {
-            NetworkManagerHelper.StartNetworkManager(out _);
+        private GameObject m_PrefabToTest;
 
-            var gameObjectId = NetworkManagerHelper.AddGameNetworkObject(Guid.NewGuid().ToString());
-            m_NetworkVariableNameComponent = NetworkManagerHelper.AddComponentToObject<NetworkVariableNameComponent>(gameObjectId);
-            NetworkManagerHelper.SpawnNetworkObject(gameObjectId);
+        protected override void OnServerAndClientsCreated()
+        {
+            m_PrefabToTest = CreateNetworkObjectPrefab("NetVarNameTest");
+            m_PrefabToTest.AddComponent<NetworkVariableNameComponent>();
+            base.OnServerAndClientsCreated();
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTest]
+        public IEnumerator VerifyNetworkVariableNameInitialization()
         {
-            NetworkManagerHelper.ShutdownNetworkManager();
-        }
+            var authority = GetAuthorityNetworkManager();
+            var authorityInstance = SpawnObject(m_PrefabToTest, authority);
+            var authorityNetworkObject = authorityInstance.GetComponent<NetworkVariableNameComponent>();
 
-        [Test]
-        public void VerifyNetworkVariableNameInitialization()
-        {
-            // Fields have regular naming
-            Assert.AreEqual(nameof(NetworkVariableNameComponent.NetworkVarList), m_NetworkVariableNameComponent.NetworkVarList.Name);
+            yield return WaitForSpawnedOnAllOrTimeOut(authorityInstance);
+            AssertOnTimeout($"Not all clients spawned {authorityInstance.name}!");
+
+            foreach (var networkManager in m_NetworkManagers)
+            {
+                var componentInstance = networkManager.SpawnManager.SpawnedObjects[authorityNetworkObject.NetworkObjectId].GetComponent<NetworkVariableNameComponent>();
+                // Verify fields have regular naming
+                Assert.AreEqual(nameof(NetworkVariableNameComponent.NetworkVarList), componentInstance.NetworkVarList.Name);
+            }
         }
 
         private class NetworkVariableNameComponent : NetworkBehaviour

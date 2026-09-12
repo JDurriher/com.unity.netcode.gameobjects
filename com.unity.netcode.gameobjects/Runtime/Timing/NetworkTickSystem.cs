@@ -7,9 +7,10 @@ namespace Unity.Netcode
     /// Provides discretized time.
     /// This is useful for games that require ticks happening at regular interval on the server and clients.
     /// </summary>
+    [Serializable]
     public class NetworkTickSystem
     {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
         private static ProfilerMarker s_Tick = new ProfilerMarker($"{nameof(NetworkTickSystem)}.Tick");
 #endif
 
@@ -96,11 +97,11 @@ namespace Unity.Netcode
                 LocalTime = new NetworkTime(TickRate, i);
                 ServerTime = new NetworkTime(TickRate, i - localToServerDifference);
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
                 s_Tick.Begin();
 #endif
                 Tick?.Invoke();
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
                 s_Tick.End();
 #endif
             }

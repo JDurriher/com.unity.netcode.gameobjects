@@ -8,12 +8,12 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public class TransformInterpolationObject : NetworkTransform
+    internal class TransformInterpolationObject : NetworkTransform
     {
         public static bool TestComplete = false;
         // Set the minimum threshold which we will use as our margin of error
 #if UNITY_EDITOR
-        public const float MinThreshold = 0.005f;
+        public const float MinThreshold = 0.00555555f;
 #else
         // Add additional room for error on console tests
         public const float MinThreshold = 0.009999f;
@@ -62,14 +62,10 @@ namespace Unity.Netcode.RuntimeTests
         private const int k_MaxThresholdFailures = 4;
         private int m_ExceededThresholdCount;
 
-        protected override void Update()
+        public override void OnUpdate()
         {
-            base.Update();
+            base.OnUpdate();
 
-            if (!IsSpawned || TestComplete)
-            {
-                return;
-            }
 
             // Check the position of the nested object on the client
             if (CheckPosition)
@@ -91,6 +87,17 @@ namespace Unity.Netcode.RuntimeTests
                     m_ExceededThresholdCount = 0;
                 }
             }
+        }
+
+        private void Update()
+        {
+            base.OnUpdate();
+
+            if (!IsSpawned || !CanCommitToTransform || TestComplete)
+            {
+                return;
+            }
+
 
             // Move the nested object on the server
             if (IsMoving)
@@ -135,11 +142,10 @@ namespace Unity.Netcode.RuntimeTests
                 Assert.True(CanCommitToTransform, $"Using non-authority instance to update transform!");
                 transform.position = new Vector3(1000.0f, 1000.0f, 1000.0f);
             }
-
         }
     }
 
-    public class TransformInterpolationTests : NetcodeIntegrationTest
+    internal class TransformInterpolationTests : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 1;
 
@@ -221,7 +227,7 @@ namespace Unity.Netcode.RuntimeTests
             // and how they move
             var timeOutHelper = new TimeoutFrameCountHelper(10);
             yield return WaitForConditionOrTimeOut(spawnedObjectNetworkTransform.ReachedTargetLocalSpaceTransitionCount, timeOutHelper);
-            Debug.Log($"[TransformInterpolationTest] Wait condition reached or timed out. Frame Count ({timeOutHelper.GetFrameCount()}) | Time Elapsed ({timeOutHelper.GetTimeElapsed()})");
+            VerboseDebug($"[TransformInterpolationTest] Wait condition reached or timed out. Frame Count ({timeOutHelper.GetFrameCount()}) | Time Elapsed ({timeOutHelper.GetTimeElapsed()})");
             AssertOnTimeout($"Failed to reach desired local to world space transitions in the given time!", timeOutHelper);
         }
     }

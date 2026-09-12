@@ -7,7 +7,7 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public class IntegrationTestUpdated : NetcodeIntegrationTest
+    internal class IntegrationTestUpdated : NetcodeIntegrationTest
     {
         private GameObject m_MyNetworkPrefab;
         protected override int NumberOfClients => 1;
@@ -29,15 +29,7 @@ namespace Unity.Netcode.RuntimeTests
         {
             // Check the condition for this test and automatically handle varying processing
             // environments and conditions
-#if UNITY_2023_1_OR_NEWER
-            yield return WaitForConditionOrTimeOut(() =>
-            Object.FindObjectsByType<NetworkVisibilityComponent>(FindObjectsSortMode.None).Where(
-                (c) => c.IsSpawned).Count() == 2);
-#else
-            yield return WaitForConditionOrTimeOut(() =>
-            Object.FindObjectsOfType<NetworkVisibilityComponent>().Where(
-                (c) => c.IsSpawned).Count() == 2);
-#endif
+            yield return WaitForConditionOrTimeOut(() => FindObjects.ByType<NetworkVisibilityComponent>().Where((c) => c.IsSpawned).Count() == 2);
             Assert.False(s_GlobalTimeoutHelper.TimedOut, "Timed out waiting for instances " +
                 "to be detected!");
         }
@@ -45,7 +37,7 @@ namespace Unity.Netcode.RuntimeTests
 
     [TestFixture(HostOrServer.Host)]
     [TestFixture(HostOrServer.Server)]
-    public class IntegrationTestExtended : NetcodeIntegrationTest
+    internal class IntegrationTestExtended : NetcodeIntegrationTest
     {
         private GameObject m_MyNetworkPrefab;
         protected override int NumberOfClients => 1;
@@ -69,26 +61,17 @@ namespace Unity.Netcode.RuntimeTests
         {
             // Check the condition for this test and automatically handle varying processing
             // environments and conditions
-#if UNITY_2023_1_OR_NEWER
-            yield return WaitForConditionOrTimeOut(() =>
-            Object.FindObjectsByType<NetworkVisibilityComponent>(FindObjectsSortMode.None).Where(
-                (c) => c.IsSpawned).Count() == 2);
-#else
-            yield return WaitForConditionOrTimeOut(() =>
-            Object.FindObjectsOfType<NetworkVisibilityComponent>().Where(
-                (c) => c.IsSpawned).Count() == 2);
-#endif
-
+            yield return WaitForConditionOrTimeOut(() => FindObjects.ByType<NetworkVisibilityComponent>().Where((c) => c.IsSpawned).Count() == 2);
             Assert.False(s_GlobalTimeoutHelper.TimedOut, "Timed out waiting for instances " +
                 "to be detected!");
         }
     }
 
-    public class ExampleTestComponent : NetworkBehaviour
+    internal class ExampleTestComponent : NetworkBehaviour
     {
     }
 
-    public class IntegrationTestPlayers : NetcodeIntegrationTest
+    internal class IntegrationTestPlayers : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 5;
 
@@ -126,13 +109,13 @@ namespace Unity.Netcode.RuntimeTests
         }
     }
 
-    public class SpawnTest : NetworkBehaviour
+    internal class SpawnTest : NetworkBehaviour
     {
         public static int TotalSpawned;
         public override void OnNetworkSpawn() { TotalSpawned++; }
         public override void OnNetworkDespawn() { TotalSpawned--; }
     }
-    public class IntegrationTestSpawning : NetcodeIntegrationTest
+    internal class IntegrationTestSpawning : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 2;
         private GameObject m_NetworkPrefabToSpawn;

@@ -10,12 +10,19 @@ namespace Unity.Netcode.RuntimeTests
     /// <summary>
     /// Runtime tests to test the network time system with the Unity player loop.
     /// </summary>
-    public class NetworkTimeSystemTests
+    internal class NetworkTimeSystemTests
     {
         private MonoBehaviourTest<PlayerLoopFixedTimeTestComponent> m_PlayerLoopFixedTimeTestComponent; // cache for teardown
         private MonoBehaviourTest<PlayerLoopTimeTestComponent> m_PlayerLoopTimeTestComponent; // cache for teardown
 
         private float m_OriginalTimeScale = 1.0f;
+
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            // TODO: [CmbServiceTests] if this test is deemed needed to test against the CMB server then update this test.
+            NetcodeIntegrationTestHelpers.IgnoreIfServiceEnviromentVariableSet();
+        }
 
         [SetUp]
         public void Setup()
@@ -28,9 +35,9 @@ namespace Unity.Netcode.RuntimeTests
 
         /// <summary>
         /// Tests whether time is accessible and has correct values inside Update/FixedUpdate.
-        /// This test applies only when <see cref="Time.timeScale"/> is 1.
+        /// This test applies only when <see cref="Time.timeScale"> is 1.
         /// </summary>
-        /// <returns>An IEnumerator for the UnityTest coroutine that validates time values in the player loop.</returns>
+        /// <returns></returns>
         [UnityTest]
         public IEnumerator PlayerLoopFixedTimeTest()
         {
@@ -42,7 +49,7 @@ namespace Unity.Netcode.RuntimeTests
         /// <summary>
         /// Tests whether time is accessible and has correct values inside Update, for multiples <see cref="Time.timeScale"/> values.
         /// </summary>
-        /// <returns>An IEnumerator for the UnityTest coroutine that validates time values under different time scales.</returns>
+        /// <returns></returns>
         [UnityTest]
         public IEnumerator PlayerLoopTimeTest_WithDifferentTimeScale([Values(0.0f, 0.1f, 0.5f, 1.0f, 2.0f, 5.0f)] float timeScale)
         {
@@ -57,7 +64,7 @@ namespace Unity.Netcode.RuntimeTests
         /// Tests whether the time system invokes the correct amount of ticks over a period of time.
         /// Note we cannot test against Time.Time directly because of floating point precision. Our time is more precise leading to different results.
         /// </summary>
-        /// <returns>An IEnumerator for the UnityTest coroutine.</returns>
+        /// <returns></returns>
         [UnityTest]
         public IEnumerator CorrectAmountTicksTest()
         {
@@ -70,26 +77,26 @@ namespace Unity.Netcode.RuntimeTests
             {
                 yield return null;
 
-                var localTickCalculated = tickSystem.LocalTime.Time / delta;
-                previous_localTickCalculated = (int)localTickCalculated;
+                var tickCalculated = tickSystem.LocalTime.Time / delta;
+                previous_localTickCalculated = (int)tickCalculated;
 
                 // This check is needed due to double division imprecision of large numbers
-                if ((localTickCalculated - previous_localTickCalculated) >= 0.999999999999)
+                if ((tickCalculated - previous_localTickCalculated) >= 0.999999999999)
                 {
                     previous_localTickCalculated++;
                 }
 
-                var serverTickCalculated = tickSystem.ServerTime.Time / delta;
-                previous_serverTickCalculated = (int)serverTickCalculated;
+                tickCalculated = NetworkManager.Singleton.ServerTime.Time / delta;
+                previous_serverTickCalculated = (int)tickCalculated;
 
                 // This check is needed due to double division imprecision of large numbers
-                if ((serverTickCalculated - previous_serverTickCalculated) >= 0.999999999999)
+                if ((tickCalculated - previous_serverTickCalculated) >= 0.999999999999)
                 {
                     previous_serverTickCalculated++;
                 }
 
-                Assert.AreEqual(previous_localTickCalculated, NetworkManager.Singleton.LocalTime.Tick, $"Calculated local tick {previous_localTickCalculated} does not match local tick {NetworkManager.Singleton.LocalTime.Tick}!]n Local Tick-Calc: {localTickCalculated} LocalTime: {tickSystem.LocalTime.Time} | Server Tick-Calc: {serverTickCalculated} ServerTime: {tickSystem.ServerTime.Time} | TickDelta: {delta}");
-                Assert.AreEqual(previous_serverTickCalculated, NetworkManager.Singleton.ServerTime.Tick, $"Calculated server tick {previous_serverTickCalculated} does not match server tick {NetworkManager.Singleton.ServerTime.Tick}!\n Local Tick-Calc: {localTickCalculated} LocalTime: {tickSystem.LocalTime.Time} | Server Tick-Calc: {serverTickCalculated} ServerTime: {tickSystem.ServerTime.Time} | TickDelta: {delta}");
+                Assert.AreEqual(previous_localTickCalculated, NetworkManager.Singleton.LocalTime.Tick, $"Calculated local tick {previous_localTickCalculated} does not match local tick {NetworkManager.Singleton.LocalTime.Tick}!");
+                Assert.AreEqual(previous_serverTickCalculated, NetworkManager.Singleton.ServerTime.Tick, $"Calculated server tick {previous_serverTickCalculated} does not match server tick {NetworkManager.Singleton.ServerTime.Tick}!");
                 Assert.AreEqual((float)NetworkManager.Singleton.LocalTime.Time, (float)NetworkManager.Singleton.ServerTime.Time, $"Local time {(float)NetworkManager.Singleton.LocalTime.Time} is not approximately server time {(float)NetworkManager.Singleton.ServerTime.Time}!", FloatComparer.s_ComparerWithDefaultTolerance);
             }
         }
@@ -116,7 +123,7 @@ namespace Unity.Netcode.RuntimeTests
         }
     }
 
-    public class PlayerLoopFixedTimeTestComponent : MonoBehaviour, IMonoBehaviourTest
+    internal class PlayerLoopFixedTimeTestComponent : MonoBehaviour, IMonoBehaviourTest
     {
         public const int Passes = 100;
 
@@ -183,7 +190,7 @@ namespace Unity.Netcode.RuntimeTests
         public bool IsTestFinished => m_UpdatePasses >= Passes;
     }
 
-    public class PlayerLoopTimeTestComponent : MonoBehaviour, IMonoBehaviourTest
+    internal class PlayerLoopTimeTestComponent : MonoBehaviour, IMonoBehaviourTest
     {
         public const int Passes = 100;
 

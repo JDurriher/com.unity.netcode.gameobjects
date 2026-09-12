@@ -39,8 +39,6 @@ Round-trip time (RTT) is a measure of how long it takes a packet to travel from 
 
 A ping is a simplified way of measuring RTT that involves sending a very basic message, with no processing at either end of the interaction, to get a general idea of network responsiveness and latency.
 
-![](../images/ping-animation-light.gif)
-
 The time between sending the request and receiving the answer is the value of your ping. Sending and receiving data can take different amounts of time: for example, with a 20ms ping it might take 15ms to send a request from the client to the server and only 5ms to receive a response. Higher ping values indicate a lot of network latency, which can make games feel slow and unresponsive.
 
 #### Jitter and packet loss

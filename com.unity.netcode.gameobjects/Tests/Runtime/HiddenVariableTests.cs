@@ -7,20 +7,31 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public class HiddenVariableTest : NetworkBehaviour
+    internal class HiddenVariableTest : NetworkBehaviour
     {
     }
 
-    public class HiddenVariableObject : NetworkBehaviour
+    internal class HiddenVariableObject : NetworkBehaviour
     {
         public static List<NetworkObject> ClientInstancesSpawned = new List<NetworkObject>();
 
         public NetworkVariable<int> MyNetworkVariable = new NetworkVariable<int>();
-        public NetworkList<int> MyNetworkList = new NetworkList<int>();
+        internal NetworkList<int> MyNetworkList = new NetworkList<int>();
 
         public static Dictionary<ulong, int> ValueOnClient = new Dictionary<ulong, int>();
         public static int ExpectedSize = 0;
         public static int SpawnCount = 0;
+
+        public static bool EnableVerbose;
+
+        public static void VerboseDebug(string message)
+        {
+            if (!EnableVerbose)
+            {
+                return;
+            }
+            Debug.Log(message);
+        }
 
         public override void OnNetworkSpawn()
         {
@@ -28,7 +39,7 @@ namespace Unity.Netcode.RuntimeTests
             {
                 ClientInstancesSpawned.Add(NetworkObject);
             }
-            Debug.Log($"{nameof(HiddenVariableObject)}.{nameof(OnNetworkSpawn)}() with value {MyNetworkVariable.Value}");
+            VerboseDebug($"{nameof(HiddenVariableObject)}.{nameof(OnNetworkSpawn)}() with value {MyNetworkVariable.Value}");
 
             MyNetworkVariable.OnValueChanged += Changed;
             MyNetworkList.OnListChanged += ListChanged;
@@ -48,17 +59,17 @@ namespace Unity.Netcode.RuntimeTests
 
         public void Changed(int before, int after)
         {
-            Debug.Log($"Value changed from {before} to {after} on {NetworkManager.LocalClientId}");
+            VerboseDebug($"[Client-{NetworkManager.LocalClientId}][{name}][MyNetworkVariable] Value changed from {before} to {after}");
             ValueOnClient[NetworkManager.LocalClientId] = after;
         }
         public void ListChanged(NetworkListEvent<int> listEvent)
         {
-            Debug.Log($"ListEvent received: type {listEvent.Type}, index {listEvent.Index}, value {listEvent.Value}");
-            Debug.Assert(ExpectedSize == MyNetworkList.Count);
+            VerboseDebug($"[Client-{NetworkManager.LocalClientId}][{name}][MyNetworkList] ListEvent received: type {listEvent.Type}, index {listEvent.Index}, value {listEvent.Value}");
+            Debug.Assert(ExpectedSize == MyNetworkList.Count, $"[{name}] List change failure! Expected Count: {ExpectedSize} Actual Count:{MyNetworkList.Count}");
         }
     }
 
-    public class HiddenVariableTests : NetcodeIntegrationTest
+    internal class HiddenVariableTests : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 4;
 
@@ -155,18 +166,19 @@ namespace Unity.Netcode.RuntimeTests
             yield return WaitForConditionOrTimeOut(VerifyLists);
             Assert.IsFalse(s_GlobalTimeoutHelper.TimedOut, "Timed out waiting for all clients to have identical values!");
 
-            Debug.Log("Value changed");
+            VerboseDebug("Value changed");
         }
 
         [UnityTest]
         public IEnumerator HiddenVariableTest()
         {
+            HiddenVariableObject.EnableVerbose = m_EnableVerboseDebug;
             HiddenVariableObject.SpawnCount = 0;
             HiddenVariableObject.ValueOnClient.Clear();
             HiddenVariableObject.ExpectedSize = 0;
             HiddenVariableObject.SpawnCount = 0;
 
-            Debug.Log("Running test");
+            VerboseDebug("Running test");
 
             // ==== Spawn object with ownership on one client
             var client = m_ServerNetworkManager.ConnectedClientsList[1];
@@ -177,8 +189,11 @@ namespace Unity.Netcode.RuntimeTests
 
             // === Check spawn occurred
             yield return WaitForSpawnCount(NumberOfClients + 1);
+
             AssertOnTimeout($"Timed out waiting for all clients to spawn {m_NetSpawnedObject.name}");
-            Debug.Log("Objects spawned");
+
+            Debug.Assert(HiddenVariableObject.SpawnCount == NumberOfClients + 1);
+            VerboseDebug("Objects spawned");
 
             // ==== Set the NetworkVariable value to 2
             HiddenVariableObject.ExpectedSize = 1;
@@ -193,7 +208,6 @@ namespace Unity.Netcode.RuntimeTests
             // ==== Hide our object to a different client
             HiddenVariableObject.ExpectedSize = 2;
             m_NetSpawnedObject.NetworkHide(otherClient.ClientId);
-
             currentValueSet = 3;
             m_NetSpawnedObject.GetComponent<HiddenVariableObject>().MyNetworkVariable.Value = currentValueSet;
             m_NetSpawnedObject.GetComponent<HiddenVariableObject>().MyNetworkList.Add(currentValueSet);
@@ -207,7 +221,7 @@ namespace Unity.Netcode.RuntimeTests
             // ==== Wait for object to be spawned
             yield return WaitForSpawnCount(1);
             Debug.Assert(HiddenVariableObject.SpawnCount == 1);
-            Debug.Log("Object spawned");
+            VerboseDebug("Object spawned");
 
             // ==== We need a refresh for the newly re-spawned object
             yield return RefreshGameObects(NumberOfClients);

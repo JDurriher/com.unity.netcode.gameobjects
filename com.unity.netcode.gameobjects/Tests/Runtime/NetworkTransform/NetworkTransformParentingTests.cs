@@ -99,22 +99,13 @@ namespace Unity.Netcode.RuntimeTests
             /// A ServerRpc that requests the server to spawn a player object for the client that invoked this RPC.
             /// </summary>
             /// <param name="rpcParams">Parameters for the ServerRpc, including the sender's client ID.</param>
-            [ServerRpc(RequireOwnership = false)]
-            private void RequestPlayerObjectSpawnServerRpc(ServerRpcParams rpcParams = default)
+            [Rpc(SendTo.Server)]
+            private void RequestPlayerObjectSpawnServerRpc(RpcParams rpcParams = default)
             {
                 SpawnedPlayer = Instantiate(PlayerPrefab);
                 SpawnedPlayer.SpawnAsPlayerObject(rpcParams.Receive.SenderClientId);
                 SpawnedPlayer.TrySetParent(NetworkObject, false);
                 State = MoveState.PlayerSpawned;
-            }
-        }
-
-        // Client Authoritative NetworkTransform
-        internal class ClientNetworkTransform : NetworkTransform
-        {
-            protected override bool OnIsServerAuthoritative()
-            {
-                return false;
             }
         }
 
@@ -135,7 +126,8 @@ namespace Unity.Netcode.RuntimeTests
             m_PlayerSpawnerPrefab.AddComponent<NetworkTransform>();
 
             var playerPrefab = CreateNetworkObjectPrefab("Child");
-            var childNetworkTransform = playerPrefab.AddComponent<ClientNetworkTransform>();
+            var childNetworkTransform = playerPrefab.AddComponent<NetworkTransform>();
+            childNetworkTransform.AuthorityMode = NetworkTransform.AuthorityModes.Owner;
             childNetworkTransform.InLocalSpace = true;
 
             parentPlayerSpawner.PlayerPrefab = playerPrefab.GetComponent<NetworkObject>();

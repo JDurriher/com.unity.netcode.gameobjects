@@ -3,77 +3,116 @@ using System;
 namespace Unity.Netcode
 {
     /// <summary>
-    /// RPC delivery types.
+    /// RPC delivery types
     /// </summary>
     public enum RpcDelivery
     {
         /// <summary>
-        /// Reliable delivery.
+        /// Reliable delivery
         /// </summary>
         Reliable = 0,
 
         /// <summary>
-        /// Unreliable delivery.
+        /// Unreliable delivery
         /// </summary>
         Unreliable
     }
 
     /// <summary>
-    /// <para>Represents the common base class for Rpc attributes.</para>
+    /// RPC invoke permissions
+    /// </summary>
+    public enum RpcInvokePermission
+    {
+        /// <summary>
+        /// Any connected client can invoke the Rpc.
+        /// </summary>
+        Everyone = 0,
+
+        /// <summary>
+        /// Rpc can only be invoked by the server.
+        /// </summary>
+        Server,
+
+        /// <summary>
+        /// Rpc can only be invoked by the owner of the NetworkBehaviour.
+        /// </summary>
+        Owner,
+    }
+
+    /// <summary>
+    /// <para>Marks a method as a remote procedure call (RPC).</para>
+    /// <para>The marked method will be executed on all game instances defined by the <see cref="SendTo"/> target.</para>
     /// </summary>
     [AttributeUsage(AttributeTargets.Method)]
     public class RpcAttribute : Attribute
     {
-        // Must match the set of parameters below
         /// <summary>
-        /// Parameters that define the behavior of an RPC.
+        /// Parameters that define the behavior of an RPC attribute
         /// </summary>
         public struct RpcAttributeParams
         {
             /// <summary>
-            /// The delivery method for the RPC.
+            /// Specifies the delivery method for the RPC
             /// </summary>
             public RpcDelivery Delivery;
 
             /// <summary>
-            /// When true, only the owner of the object can execute this RPC.
+            /// When true, only the owner of the object can execute this RPC
             /// </summary>
+            /// <remarks>
+            /// Deprecated in favor of <see cref="InvokePermission"/>.
+            /// </remarks>
+            [Obsolete("RequireOwnership is deprecated. Please use InvokePermission instead.")]
             public bool RequireOwnership;
 
             /// <summary>
-            /// When true, local execution of the RPC is deferred until the next network tick.
+            /// Who has network permission to invoke this RPC
+            /// </summary>
+            public RpcInvokePermission InvokePermission;
+
+            /// <summary>
+            /// When true, local execution of the RPC is deferred until the next network tick
             /// </summary>
             public bool DeferLocal;
 
             /// <summary>
-            /// When true, allows the RPC target to be overridden at runtime.
+            /// When true, allows the RPC target to be overridden at runtime
             /// </summary>
             public bool AllowTargetOverride;
         }
 
         // Must match the fields in RemoteAttributeParams
         /// <summary>
-        /// Type of RPC delivery method.
+        /// Type of RPC delivery method
         /// </summary>
         public RpcDelivery Delivery = RpcDelivery.Reliable;
 
         /// <summary>
-        /// When true, only the owner of the object can execute this RPC.
+        /// Controls who has permission to invoke this RPC. The default setting is <see cref="RpcInvokePermission.Everyone"/>
         /// </summary>
+        public RpcInvokePermission InvokePermission;
+
+        /// <summary>
+        /// When true, only the owner of the object can execute this RPC
+        /// </summary>
+        /// <remarks>
+        /// Deprecated in favor of <see cref="InvokePermission"/>.
+        /// </remarks>
+        [Obsolete("RequireOwnership is deprecated. Please use InvokePermission = RpcInvokePermission.Owner or InvokePermission = RpcInvokePermission.Everyone instead.")]
         public bool RequireOwnership;
 
         /// <summary>
-        /// When true, local execution of the RPC is deferred until the next network tick.
+        /// When true, local execution of the RPC is deferred until the next network tick
         /// </summary>
         public bool DeferLocal;
 
         /// <summary>
-        /// When true, allows the RPC target to be overridden at runtime.
+        /// When true, allows the RPC target to be overridden at runtime
         /// </summary>
         public bool AllowTargetOverride;
 
         /// <summary>
-        /// Initializes a new instance of the RpcAttribute with the specified target.
+        /// Initializes a new instance of the RpcAttribute with the specified target
         /// </summary>
         /// <param name="target">The target for this RPC</param>
         public RpcAttribute(SendTo target)
@@ -97,10 +136,26 @@ namespace Unity.Netcode
         /// <summary>
         /// When true, only the owner of the NetworkObject can invoke this ServerRpc.
         /// </summary>
+        /// <remarks>
+        /// <para> Deprecated in favor of using <see cref="RpcAttribute"/> with a <see cref="SendTo.Server"/> target and an <see cref="RpcAttribute.InvokePermission"/>.</para>
+        /// <code>
+        ///     [ServerRpc(RequireOwnership = false)]
+        ///     // is replaced with
+        ///     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        ///     // as InvokePermission has a default setting of RpcInvokePermission.Everyone, you can also use
+        ///     [Rpc(SendTo.Server)]
+        /// </code>
+        /// <code>
+        ///     [ServerRpc(RequireOwnership = true)]
+        ///     // is replaced with
+        ///     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        /// </code>
+        /// </remarks>
+        [Obsolete("ServerRpc with RequireOwnership is deprecated. Use [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)] or [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)] instead.)]")]
         public new bool RequireOwnership;
 
         /// <summary>
-        /// Initializes a new instance of ServerRpcAttribute configured to target the server.
+        /// Initializes a new instance of ServerRpcAttribute that targets the server
         /// </summary>
         public ServerRpcAttribute() : base(SendTo.Server)
         {
@@ -116,11 +171,10 @@ namespace Unity.Netcode
     public class ClientRpcAttribute : RpcAttribute
     {
         /// <summary>
-        /// Initializes a new instance of ClientRpcAttribute configured to target all non-server clients.
+        /// Initializes a new instance of ClientRpcAttribute that targets all clients except the server
         /// </summary>
         public ClientRpcAttribute() : base(SendTo.NotServer)
         {
-
         }
     }
 }

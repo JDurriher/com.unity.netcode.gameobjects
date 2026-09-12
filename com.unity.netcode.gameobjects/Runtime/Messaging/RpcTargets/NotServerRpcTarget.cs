@@ -2,17 +2,14 @@ namespace Unity.Netcode
 {
     internal class NotServerRpcTarget : BaseRpcTarget
     {
-        private IGroupRpcTarget m_GroupSendTarget;
-        private LocalSendRpcTarget m_LocalSendRpcTarget;
+        protected IGroupRpcTarget m_GroupSendTarget;
+        protected LocalSendRpcTarget m_LocalSendRpcTarget;
 
         public override void Dispose()
         {
             m_LocalSendRpcTarget.Dispose();
-            if (m_GroupSendTarget != null)
-            {
-                m_GroupSendTarget.Target.Dispose();
-                m_GroupSendTarget = null;
-            }
+            m_GroupSendTarget?.Target.Dispose();
+            m_GroupSendTarget = null;
         }
 
         internal override void Send(NetworkBehaviour behaviour, ref RpcMessage message, NetworkDelivery delivery, RpcParams rpcParams)
@@ -51,7 +48,13 @@ namespace Unity.Netcode
                         continue;
                     }
 
-                    if (clientId == behaviour.NetworkManager.LocalClientId)
+                    // If we are in distributed authority mode and connected to the service, then we exclude the owner/authority from the list
+                    if (m_NetworkManager.DistributedAuthorityMode && m_NetworkManager.CMBServiceConnection && clientId == behaviour.OwnerClientId)
+                    {
+                        continue;
+                    }
+
+                    if (clientId == m_NetworkManager.LocalClientId)
                     {
                         m_LocalSendRpcTarget.Send(behaviour, ref message, delivery, rpcParams);
                         continue;

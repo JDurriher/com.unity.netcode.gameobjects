@@ -10,7 +10,7 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.EditorTests
 {
-    public class MessageCorruptionTests
+    internal class MessageCorruptionTests
     {
 
         private struct TestMessage : INetworkMessage, INetworkSerializeByMemcpy
@@ -90,17 +90,14 @@ namespace Unity.Netcode.EditorTests
                             break;
                         }
                     case TypeOfCorruption.CorruptBytes:
+                        for (int i = 0; i < 4; i++)
                         {
-                            batchData.Seek(batchData.Length - 4);
-                            for (int i = 0; i < 4; i++)
-                            {
-                                var currentByte = batchData.GetUnsafePtr()[i];
-                                currentByte = (byte)((currentByte + 1) % 255);
-                                batchData.WriteByteSafe(currentByte);
-                                MessageQueue.Add(batchData.ToArray());
-                            }
-                            break;
+                            var currentByte = batchData.GetUnsafePtr()[i];
+                            currentByte = (byte)((currentByte + 1) % 255);
+                            batchData.WriteByteSafe(currentByte);
+                            MessageQueue.Add(batchData.ToArray());
                         }
+                        break;
                     case TypeOfCorruption.Truncated:
                         batchData.Truncate(batchData.Length - 1);
                         MessageQueue.Add(batchData.ToArray());

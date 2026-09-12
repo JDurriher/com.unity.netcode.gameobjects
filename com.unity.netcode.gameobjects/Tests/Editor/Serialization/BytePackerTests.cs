@@ -8,7 +8,7 @@ using Random = System.Random;
 
 namespace Unity.Netcode.EditorTests
 {
-    public class BytePackerTests
+    internal class BytePackerTests
     {
         private enum ByteEnum : byte
         {
@@ -92,7 +92,7 @@ namespace Unity.Netcode.EditorTests
                 using (reader)
                 {
 
-                    var outVal = new T();
+                    var outVal = default(T);
                     MethodInfo method;
                     if (value is Enum)
                     {

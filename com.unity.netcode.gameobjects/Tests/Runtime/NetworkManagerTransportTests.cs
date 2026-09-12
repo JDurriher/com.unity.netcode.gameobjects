@@ -9,8 +9,15 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    public class NetworkManagerTransportTests
+    internal class NetworkManagerTransportTests
     {
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            // This test does not need to run against the Rust server.
+            NetcodeIntegrationTestHelpers.IgnoreIfServiceEnviromentVariableSet();
+        }
+
         [Test]
         public void ClientDoesNotStartWhenTransportFails()
         {
@@ -109,7 +116,7 @@ namespace Unity.Netcode.RuntimeTests
         /// <summary>
         /// Does nothing but simulate a transport that can fail at startup and/or when polling events.
         /// </summary>
-        public class FailedTransport : TestingNetworkTransport
+        internal class FailedTransport : TestingNetworkTransport
         {
             public bool FailOnStart = false;
             public bool FailOnNextPoll = false;
@@ -163,7 +170,7 @@ namespace Unity.Netcode.RuntimeTests
 
     /// <summary>
     /// Verifies the UnityTransport.GetEndpoint method returns
-    /// valid NetworkEndPoint information.
+    /// valid NetworkEndpoint information.
     /// </summary>
     internal class TransportEndpointTests : NetcodeIntegrationTest
     {
@@ -173,14 +180,8 @@ namespace Unity.Netcode.RuntimeTests
         public IEnumerator GetEndpointReportedCorrectly()
         {
             var serverUnityTransport = m_ServerNetworkManager.NetworkConfig.NetworkTransport as UnityTransport;
-
-#if UTP_TRANSPORT_2_0_ABOVE
             var serverEndpoint = new NetworkEndpoint();
             var clientEndpoint = new NetworkEndpoint();
-#else
-            var serverEndpoint = new NetworkEndPoint();
-            var clientEndpoint = new NetworkEndPoint();
-#endif
             foreach (var client in m_ClientNetworkManagers)
             {
                 var unityTransport = client.NetworkConfig.NetworkTransport as UnityTransport;
@@ -211,6 +212,4 @@ namespace Unity.Netcode.RuntimeTests
             Assert.IsFalse(clientEndpoint.IsValid);
         }
     }
-
-
 }

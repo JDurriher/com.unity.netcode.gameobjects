@@ -23,7 +23,7 @@ namespace Unity.Netcode
             internal int MaxCapacity;
             internal Allocator Allocator;
             internal bool BufferGrew;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             internal int AllowedWriteMark;
             internal bool InBitwiseContext;
 #endif
@@ -31,7 +31,7 @@ namespace Unity.Netcode
 
         internal unsafe WriterHandle* Handle;
 
-        private static byte[] s_ByteArrayCache = new byte[65535];
+        private static readonly byte[] k_ByteArrayCache = new byte[65535];
 
         /// <summary>
         /// The current write position
@@ -79,7 +79,7 @@ namespace Unity.Netcode
         internal unsafe void CommitBitwiseWrites(int amount)
         {
             Handle->Position += amount;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->InBitwiseContext = false;
 #endif
         }
@@ -97,7 +97,7 @@ namespace Unity.Netcode
             // If the buffer grows, a new buffer will be allocated and the handle pointer pointed at the new location...
             // The original buffer won't be deallocated until the writer is destroyed since it's part of the handle allocation.
             Handle = (WriterHandle*)UnsafeUtility.Malloc(sizeof(WriterHandle) + size, UnsafeUtility.AlignOf<WriterHandle>(), allocator);
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             UnsafeUtility.MemSet(Handle, 0, sizeof(WriterHandle) + size);
 #endif
             Handle->BufferPointer = (byte*)(Handle + 1);
@@ -107,7 +107,7 @@ namespace Unity.Netcode
             Handle->Allocator = allocator;
             Handle->MaxCapacity = maxSize < size ? size : maxSize;
             Handle->BufferGrew = false;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->AllowedWriteMark = 0;
             Handle->InBitwiseContext = false;
 #endif
@@ -185,7 +185,7 @@ namespace Unity.Netcode
         /// <returns>A BitWriter</returns>
         public unsafe BitWriter EnterBitwiseContext()
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->InBitwiseContext = true;
 #endif
             return new BitWriter(this);
@@ -201,7 +201,7 @@ namespace Unity.Netcode
 
             var newSize = Math.Min(desiredSize, Handle->MaxCapacity);
             byte* newBuffer = (byte*)UnsafeUtility.Malloc(newSize, UnsafeUtility.AlignOf<byte>(), Handle->Allocator);
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             UnsafeUtility.MemSet(newBuffer, 0, newSize);
 #endif
             UnsafeUtility.MemCpy(newBuffer, Handle->BufferPointer, Length);
@@ -232,7 +232,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryBeginWrite(int bytes)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -255,7 +255,7 @@ namespace Unity.Netcode
                     return false;
                 }
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->AllowedWriteMark = Handle->Position + bytes;
 #endif
             return true;
@@ -280,7 +280,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryBeginWriteValue<T>(in T value) where T : unmanaged
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -304,7 +304,7 @@ namespace Unity.Netcode
                     return false;
                 }
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->AllowedWriteMark = Handle->Position + len;
 #endif
             return true;
@@ -320,7 +320,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryBeginWriteInternal(int bytes)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -343,7 +343,7 @@ namespace Unity.Netcode
                     return false;
                 }
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->Position + bytes > Handle->AllowedWriteMark)
             {
                 Handle->AllowedWriteMark = Handle->Position + bytes;
@@ -379,17 +379,17 @@ namespace Unity.Netcode
         internal unsafe ArraySegment<byte> ToTempByteArray()
         {
             var length = Length;
-            if (length > s_ByteArrayCache.Length)
+            if (length > k_ByteArrayCache.Length)
             {
                 return new ArraySegment<byte>(ToArray(), 0, length);
             }
 
-            fixed (byte* b = s_ByteArrayCache)
+            fixed (byte* b = k_ByteArrayCache)
             {
                 UnsafeUtility.MemCpy(b, Handle->BufferPointer, length);
             }
 
-            return new ArraySegment<byte>(s_ByteArrayCache, 0, length);
+            return new ArraySegment<byte>(k_ByteArrayCache, 0, length);
         }
 
         /// <summary>
@@ -421,7 +421,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetWriteSize(string s, bool oneByteChars = false)
         {
-            return sizeof(int) + s.Length * (oneByteChars ? sizeof(byte) : sizeof(char));
+            return SizeOfLengthField() + s.Length * (oneByteChars ? sizeof(byte) : sizeof(char));
         }
 
         /// <summary>
@@ -445,7 +445,7 @@ namespace Unity.Netcode
         public void WriteNetworkSerializable<T>(T[] array, int count = -1, int offset = 0) where T : INetworkSerializable
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
-            WriteValueSafe(sizeInTs);
+            WriteLengthSafe(sizeInTs);
             foreach (var item in array)
             {
                 WriteNetworkSerializable(item);
@@ -462,7 +462,7 @@ namespace Unity.Netcode
         public void WriteNetworkSerializable<T>(NativeArray<T> array, int count = -1, int offset = 0) where T : unmanaged, INetworkSerializable
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
-            WriteValueSafe(sizeInTs);
+            WriteLengthSafe(sizeInTs);
             foreach (var item in array)
             {
                 WriteNetworkSerializable(item);
@@ -480,7 +480,7 @@ namespace Unity.Netcode
         public void WriteNetworkSerializable<T>(NativeList<T> array, int count = -1, int offset = 0) where T : unmanaged, INetworkSerializable
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
-            WriteValueSafe(sizeInTs);
+            WriteLengthSafe(sizeInTs);
             foreach (var item in array)
             {
                 WriteNetworkSerializable(item);
@@ -495,7 +495,7 @@ namespace Unity.Netcode
         /// <param name="oneByteChars">Whether or not to use one byte per character. This will only allow ASCII</param>
         public unsafe void WriteValue(string s, bool oneByteChars = false)
         {
-            WriteValue((uint)s.Length);
+            WriteLength((uint)s.Length);
             int target = s.Length;
             if (oneByteChars)
             {
@@ -523,7 +523,7 @@ namespace Unity.Netcode
         /// <param name="oneByteChars">Whether or not to use one byte per character. This will only allow ASCII</param>
         public unsafe void WriteValueSafe(string s, bool oneByteChars = false)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -538,7 +538,7 @@ namespace Unity.Netcode
                 throw new OverflowException("Writing past the end of the buffer");
             }
 
-            WriteValue((uint)s.Length);
+            WriteLength((uint)s.Length);
             int target = s.Length;
             if (oneByteChars)
             {
@@ -569,7 +569,7 @@ namespace Unity.Netcode
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
             int sizeInBytes = sizeInTs * sizeof(T);
-            return sizeof(int) + sizeInBytes;
+            return SizeOfLengthField() + sizeInBytes;
         }
 
         /// <summary>
@@ -585,7 +585,7 @@ namespace Unity.Netcode
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
             int sizeInBytes = sizeInTs * sizeof(T);
-            return sizeof(int) + sizeInBytes;
+            return SizeOfLengthField() + sizeInBytes;
         }
 
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
@@ -602,7 +602,7 @@ namespace Unity.Netcode
         {
             int sizeInTs = count != -1 ? count : array.Length - offset;
             int sizeInBytes = sizeInTs * sizeof(T);
-            return sizeof(int) + sizeInBytes;
+            return SizeOfLengthField() + sizeInBytes;
         }
 #endif
 
@@ -618,7 +618,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WritePartialValue<T>(T value, int bytesToWrite, int offsetBytes = 0) where T : unmanaged
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -644,7 +644,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteByte(byte value)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -668,7 +668,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteByteSafe(byte value)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -692,7 +692,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteBytes(byte* value, int size, int offset = 0)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -719,7 +719,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteBytesSafe(byte* value, int size, int offset = 0)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -772,11 +772,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteBytes(NativeList<byte> value, int size = -1, int offset = 0)
         {
-#if UTP_TRANSPORT_2_0_ABOVE
             byte* ptr = value.GetUnsafePtr();
-#else
-            byte* ptr = (byte*)value.GetUnsafePtr();
-#endif
             WriteBytes(ptr, size == -1 ? value.Length : size, offset);
         }
 
@@ -820,11 +816,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void WriteBytesSafe(NativeList<byte> value, int size = -1, int offset = 0)
         {
-#if UTP_TRANSPORT_2_0_ABOVE
             byte* ptr = value.GetUnsafePtr();
-#else
-            byte* ptr = (byte*)value.GetUnsafePtr();
-#endif
             WriteBytesSafe(ptr, size == -1 ? value.Length : size, offset);
         }
 
@@ -876,7 +868,7 @@ namespace Unity.Netcode
         public static int GetWriteSize<T>(in T value)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            return value.Length + sizeof(int);
+            return SizeOfLengthField() + value.Length;
         }
 
         /// <summary>
@@ -888,10 +880,10 @@ namespace Unity.Netcode
         public static int GetWriteSize<T>(in NativeArray<T> value)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            var size = sizeof(int);
+            var size = SizeOfLengthField();
             foreach (var item in value)
             {
-                size += sizeof(int) + item.Length;
+                size += SizeOfLengthField() + item.Length;
             }
 
             return size;
@@ -907,10 +899,10 @@ namespace Unity.Netcode
         public static int GetWriteSize<T>(in NativeList<T> value)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            var size = sizeof(int);
+            var size = SizeOfLengthField();
             foreach (var item in value)
             {
-                size += sizeof(int) + item.Length;
+                size += SizeOfLengthField() + item.Length;
             }
 
             return size;
@@ -947,9 +939,31 @@ namespace Unity.Netcode
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int SizeOfLengthField() => sizeof(uint);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLengthSafe(uint length) => WriteUnmanagedSafe(length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLength(uint length) => WriteUnmanaged(length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLengthSafe(int length)
+        {
+            if (length < 0)
+            {
+                throw new InvalidCastException("Cannot write negative length");
+            }
+            WriteLengthSafe((uint)length);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLength(int length) => WriteLength((uint)length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanaged<T>(T[] value) where T : unmanaged
         {
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             fixed (T* ptr = value)
             {
                 byte* bytes = (byte*)ptr;
@@ -959,7 +973,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanagedSafe<T>(T[] value) where T : unmanaged
         {
-            WriteUnmanagedSafe(value.Length);
+            WriteLengthSafe(value.Length);
             fixed (T* ptr = value)
             {
                 byte* bytes = (byte*)ptr;
@@ -970,7 +984,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanaged<T>(NativeArray<T> value) where T : unmanaged
         {
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             var ptr = (T*)value.GetUnsafePtr();
             {
                 byte* bytes = (byte*)ptr;
@@ -980,7 +994,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanagedSafe<T>(NativeArray<T> value) where T : unmanaged
         {
-            WriteUnmanagedSafe(value.Length);
+            WriteLengthSafe(value.Length);
             var ptr = (T*)value.GetUnsafePtr();
             {
                 byte* bytes = (byte*)ptr;
@@ -992,13 +1006,8 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanaged<T>(NativeList<T> value) where T : unmanaged
         {
-            WriteUnmanaged(value.Length);
-
-#if UTP_TRANSPORT_2_0_ABOVE
+            WriteLength(value.Length);
             var ptr = value.GetUnsafePtr();
-#else
-            var ptr = (T*)value.GetUnsafePtr();
-#endif
             {
                 byte* bytes = (byte*)ptr;
                 WriteBytes(bytes, sizeof(T) * value.Length);
@@ -1007,12 +1016,8 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void WriteUnmanagedSafe<T>(NativeList<T> value) where T : unmanaged
         {
-            WriteUnmanagedSafe(value.Length);
-#if UTP_TRANSPORT_2_0_ABOVE
+            WriteLengthSafe(value.Length);
             var ptr = value.GetUnsafePtr();
-#else
-            var ptr = (T*)value.GetUnsafePtr();
-#endif
             {
                 byte* bytes = (byte*)ptr;
                 WriteBytesSafe(bytes, sizeof(T) * value.Length);
@@ -1210,11 +1215,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteValueSafe<T>(NativeHashSet<T> value) where T : unmanaged, IEquatable<T>
         {
-#if UTP_TRANSPORT_2_0_ABOVE
-            WriteUnmanagedSafe(value.Count);
-#else
-            WriteUnmanagedSafe(value.Count());
-#endif
+            WriteLengthSafe(value.Count);
             foreach (var item in value)
             {
                 var iReffable = item;
@@ -1227,11 +1228,7 @@ namespace Unity.Netcode
             where TKey : unmanaged, IEquatable<TKey>
             where TVal : unmanaged
         {
-#if UTP_TRANSPORT_2_0_ABOVE
-            WriteUnmanagedSafe(value.Count);
-#else
-            WriteUnmanagedSafe(value.Count());
-#endif
+            WriteLengthSafe(value.Count);
             foreach (var item in value)
             {
                 (var key, var val) = (item.Key, item.Value);
@@ -1800,7 +1797,8 @@ namespace Unity.Netcode
         public unsafe void WriteValue<T>(in T value, ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            WriteUnmanaged(value.Length);
+            // BytePacker.WriteValuePacked(this, value.Length);
+            WriteLength(value.Length);
             // This avoids a copy on the string, which could be costly for FixedString4096Bytes
             // Otherwise, GetUnsafePtr() is an impure function call and will result in a copy
             // for `in` parameters.
@@ -1822,7 +1820,7 @@ namespace Unity.Netcode
         public void WriteValue<T>(T[] value, ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);
@@ -1841,7 +1839,7 @@ namespace Unity.Netcode
         public void WriteValue<T>(in NativeArray<T> value, ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);
@@ -1861,7 +1859,7 @@ namespace Unity.Netcode
         public void WriteValue<T>(in NativeList<T> value, ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);
@@ -1883,7 +1881,7 @@ namespace Unity.Netcode
         public void WriteValueSafe<T>(in T value, ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            if (!TryBeginWriteInternal(sizeof(int) + value.Length))
+            if (!TryBeginWriteInternal(SizeOfLengthField() + value.Length))
             {
                 throw new OverflowException("Writing past the end of the buffer");
             }
@@ -1906,7 +1904,7 @@ namespace Unity.Netcode
             {
                 throw new OverflowException("Writing past the end of the buffer");
             }
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);
@@ -1928,7 +1926,7 @@ namespace Unity.Netcode
             {
                 throw new OverflowException("Writing past the end of the buffer");
             }
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);
@@ -1951,7 +1949,7 @@ namespace Unity.Netcode
             {
                 throw new OverflowException("Writing past the end of the buffer");
             }
-            WriteUnmanaged(value.Length);
+            WriteLength(value.Length);
             foreach (var str in value)
             {
                 WriteValue(str);

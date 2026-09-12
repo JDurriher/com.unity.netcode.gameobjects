@@ -18,8 +18,9 @@ namespace Unity.Netcode
             public bool IsAssigned;
             public Scene Scene;
         }
+        public bool IsIntegrationTest() { return false; }
 
-        internal Dictionary<string, Dictionary<int, SceneEntry>> SceneNameToSceneHandles = new Dictionary<string, Dictionary<int, SceneEntry>>();
+        internal Dictionary<string, Dictionary<NetworkSceneHandle, SceneEntry>> SceneNameToSceneHandles = new();
 
         public AsyncOperation LoadSceneAsync(string sceneName, LoadSceneMode loadSceneMode, SceneEventProgress sceneEventProgress)
         {
@@ -46,7 +47,7 @@ namespace Unity.Netcode
         /// <summary>
         /// Stops tracking a specific scene
         /// </summary>
-        public void StopTrackingScene(int handle, string name, NetworkManager networkManager)
+        public void StopTrackingScene(NetworkSceneHandle handle, string name, NetworkManager networkManager)
         {
             if (SceneNameToSceneHandles.ContainsKey(name))
             {
@@ -68,7 +69,7 @@ namespace Unity.Netcode
         {
             if (!SceneNameToSceneHandles.ContainsKey(scene.name))
             {
-                SceneNameToSceneHandles.Add(scene.name, new Dictionary<int, SceneEntry>());
+                SceneNameToSceneHandles.Add(scene.name, new Dictionary<NetworkSceneHandle, SceneEntry>());
             }
 
             if (!SceneNameToSceneHandles[scene.name].ContainsKey(scene.handle))
@@ -167,7 +168,7 @@ namespace Unity.Netcode
         /// same application instance is still running, the same scenes are still loaded on the client, and
         /// upon reconnecting the client doesn't have to unload the scenes and then reload them)
         /// </summary>
-        public void PopulateLoadedScenes(ref Dictionary<int, Scene> scenesLoaded, NetworkManager networkManager)
+        public void PopulateLoadedScenes(ref Dictionary<NetworkSceneHandle, Scene> scenesLoaded, NetworkManager networkManager)
         {
             SceneNameToSceneHandles.Clear();
             var sceneCount = SceneManager.sceneCount;
@@ -176,7 +177,7 @@ namespace Unity.Netcode
                 var scene = SceneManager.GetSceneAt(i);
                 if (!SceneNameToSceneHandles.ContainsKey(scene.name))
                 {
-                    SceneNameToSceneHandles.Add(scene.name, new Dictionary<int, SceneEntry>());
+                    SceneNameToSceneHandles.Add(scene.name, new Dictionary<NetworkSceneHandle, SceneEntry>());
                 }
 
                 if (!SceneNameToSceneHandles[scene.name].ContainsKey(scene.handle))
@@ -205,7 +206,7 @@ namespace Unity.Netcode
         /// Unloads any scenes that have not been assigned.
         /// </summary>
         /// <param name="networkManager"></param>
-        public void UnloadUnassignedScenes(NetworkManager networkManager = null)
+        public void UnloadUnassignedScenes(NetworkManager networkManager)
         {
             var sceneManager = networkManager.SceneManager;
             SceneManager.sceneUnloaded += SceneManager_SceneUnloaded;
@@ -292,6 +293,7 @@ namespace Unity.Netcode
             // Create a local copy of the spawned objects list since the spawn manager will adjust the list as objects
             // are despawned.
             var localSpawnedObjectsHashSet = new HashSet<NetworkObject>(networkManager.SpawnManager.SpawnedObjectsList);
+            var distributedAuthority = networkManager.DistributedAuthorityMode;
             foreach (var networkObject in localSpawnedObjectsHashSet)
             {
                 if (networkObject == null || (networkObject != null && networkObject.gameObject.scene.handle != scene.handle))
@@ -299,21 +301,36 @@ namespace Unity.Netcode
                     continue;
                 }
 
+                // Check to determine if we need to allow destroying a non-authority instance
+                if (distributedAuthority && networkObject.DestroyWithScene && !networkObject.HasAuthority)
+                {
+                    networkObject.DestroyPendingSceneEvent = true;
+                }
+
                 // Only NetworkObjects marked to not be destroyed with the scene and are not already in the DDOL are preserved
                 if (!networkObject.DestroyWithScene && networkObject.gameObject.scene != networkManager.SceneManager.DontDestroyOnLoadScene)
                 {
                     // Only move dynamically spawned NetworkObjects with no parent as the children will follow
-                    if (networkObject.gameObject.transform.parent == null && networkObject.IsSceneObject != null && !networkObject.IsSceneObject.Value)
+                    if (networkObject.gameObject.transform.parent == null && !networkObject.InScenePlaced)
                     {
                         UnityEngine.Object.DontDestroyOnLoad(networkObject.gameObject);
                     }
                 }
-                else if (networkManager.IsServer)
+                else if (networkObject.HasAuthority)
                 {
+                    // We know this instance is going to be destroyed (when it receives the destroy object message).
+                    // We have to invoke this prior to invoking despawn in order to know that we are de-spawning in
+                    // preparation of being destroyed by the SceneManager.
+                    networkObject.SetIsDestroying();
+                    // This sends a de-spawn message prior to the scene event.
                     networkObject.Despawn();
                 }
                 else // We are a client, migrate the object into the DDOL temporarily until it receives the destroy command from the server
                 {
+                    // We know this instance is going to be destroyed (when it receives the destroy object message).
+                    // We have to invoke this prior to invoking despawn in order to know that we are de-spawning in
+                    // preparation of being destroyed by the SceneManager.
+                    networkObject.SetIsDestroying();
                     UnityEngine.Object.DontDestroyOnLoad(networkObject.gameObject);
                 }
             }
@@ -332,8 +349,9 @@ namespace Unity.Netcode
         public void SetClientSynchronizationMode(ref NetworkManager networkManager, LoadSceneMode mode)
         {
             var sceneManager = networkManager.SceneManager;
-            // Don't let client's set this value
-            if (!networkManager.IsServer)
+            // In client-server, we don't let client's set this value.
+            // In distributed authority, since session owner can be promoted clients can set this value
+            if (!networkManager.DistributedAuthorityMode && !networkManager.IsServer)
             {
                 if (NetworkLog.CurrentLogLevel <= LogLevel.Normal)
                 {
@@ -341,8 +359,8 @@ namespace Unity.Netcode
                 }
                 return;
             }
-            else // Warn users if they are changing this after there are clients already connected and synchronized
-            if (networkManager.ConnectedClientsIds.Count > (networkManager.IsHost ? 1 : 0) && sceneManager.ClientSynchronizationMode != mode)
+            // Warn users if they are changing this after there are clients already connected and synchronized
+            else if (!networkManager.DistributedAuthorityMode && networkManager.ConnectedClientsIds.Count > (networkManager.IsHost ? 1 : 0) && sceneManager.ClientSynchronizationMode != mode)
             {
                 if (NetworkLog.CurrentLogLevel <= LogLevel.Normal)
                 {

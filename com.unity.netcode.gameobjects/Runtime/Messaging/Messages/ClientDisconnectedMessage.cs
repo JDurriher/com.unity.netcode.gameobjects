@@ -25,6 +25,12 @@ namespace Unity.Netcode
         public void Handle(ref NetworkContext context)
         {
             var networkManager = (NetworkManager)context.SystemOwner;
+            if (networkManager.DistributedAuthorityMode && networkManager.CMBServiceConnection && networkManager.LocalClient.IsSessionOwner && networkManager.NetworkConfig.EnableSceneManagement)
+            {
+                networkManager.SceneManager.ClientConnectionQueue.Remove(ClientId);
+            }
+            // All modes support removing NetworkClients
+            networkManager.ConnectionManager.RemoveClient(ClientId);
             networkManager.ConnectionManager.ConnectedClientIds.Remove(ClientId);
             if (networkManager.IsConnectedClient)
             {

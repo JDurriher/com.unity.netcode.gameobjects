@@ -10,7 +10,7 @@ namespace Unity.Netcode
     public struct NetworkObjectReference : INetworkSerializable, IEquatable<NetworkObjectReference>
     {
         private ulong m_NetworkObjectId;
-        private static ulong s_NullId = ulong.MaxValue;
+        private const ulong k_NullId = ulong.MaxValue;
 
         /// <summary>
         /// The <see cref="NetworkObject.NetworkObjectId"/> of the referenced <see cref="NetworkObject"/>.
@@ -25,12 +25,13 @@ namespace Unity.Netcode
         /// Creates a new instance of the <see cref="NetworkObjectReference"/> struct.
         /// </summary>
         /// <param name="networkObject">The <see cref="NetworkObject"/> to reference.</param>
-        /// <exception cref="ArgumentException">Thrown if the <see cref="NetworkObject"/> is not spawned.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when networkObject is null (creates a null reference instead of throwing)</exception>
+        /// <exception cref="ArgumentException">Thrown when the NetworkObject is not spawned. NetworkObjectReference can only be created from spawned NetworkObjects</exception>
         public NetworkObjectReference(NetworkObject networkObject)
         {
             if (networkObject == null)
             {
-                m_NetworkObjectId = s_NullId;
+                m_NetworkObjectId = k_NullId;
                 return;
             }
 
@@ -46,12 +47,13 @@ namespace Unity.Netcode
         /// Creates a new instance of the <see cref="NetworkObjectReference"/> struct.
         /// </summary>
         /// <param name="gameObject">The GameObject from which the <see cref="NetworkObject"/> component will be referenced.</param>
-        /// <exception cref="ArgumentException">Thrown if the GameObject does not have a <see cref="NetworkObject"/> component or if the <see cref="NetworkObject"/> is not spawned.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when networkObject is null (creates a null reference instead of throwing)</exception>
+        /// <exception cref="ArgumentException">Thrown when the NetworkObject is not spawned. NetworkObjectReference can only be created from spawned NetworkObjects</exception>
         public NetworkObjectReference(GameObject gameObject)
         {
             if (gameObject == null)
             {
-                m_NetworkObjectId = s_NullId;
+                m_NetworkObjectId = k_NullId;
                 return;
             }
 
@@ -60,6 +62,7 @@ namespace Unity.Netcode
             {
                 throw new ArgumentException($"Cannot create {nameof(NetworkObjectReference)} from {nameof(GameObject)} without a {nameof(NetworkObject)} component.");
             }
+
             if (networkObject.IsSpawned == false)
             {
                 throw new ArgumentException($"{nameof(NetworkObjectReference)} can only be created from spawned {nameof(NetworkObject)}s.");
@@ -89,7 +92,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static NetworkObject Resolve(NetworkObjectReference networkObjectRef, NetworkManager networkManager = null)
         {
-            if (networkObjectRef.m_NetworkObjectId == s_NullId)
+            if (networkObjectRef.m_NetworkObjectId == k_NullId)
             {
                 return null;
             }

@@ -29,7 +29,7 @@ For those accustomed to the legacy `ServerRpc` and `ClientRpc` parameters, there
     - `Defer`: Invokes the RPC locally on the next frame.
     - `SendImmediate` (default): Immediately invokes the RPC (at the current call stack) locally.
 
-- Changing destination of an RPC is done using the properties and methods of `RpcTarget` (each `NetworkBehaviour` contains a reference to the shared `RpcTarget` object, as does `NetworkManager`.) This allows conveniently selecting various common targets (Server, NotServer, Owner, NotOwner, etc), as well as custom client lists using `RpcTarget.Single()` (to send to one client ID), `RpcTarget.Group()` (to send to multiple client IDs),  and`RpcTarget.Not()` (to send to everyone except for the specified client ID or list of client IDs)
+- Changing destination of an RPC is done using the properties and methods of `RpcTarget` (each NetworkBehaviour contains a reference to the shared `RpcTarget` object, as does NetworkManager.) This allows conveniently selecting various common targets (Server, NotServer, Owner, NotOwner, etc), as well as custom client lists using `RpcTarget.Single()` (to send to one client ID), `RpcTarget.Group()` (to send to multiple client IDs),  and`RpcTarget.Not()` (to send to everyone except for the specified client ID or list of client IDs)
 - `RpcParams` do not allow overriding the destination at runtime unless either the default target is `SendTo.SpecifiedInParams` or `AllowTargetOverride = true` is passed to the attribute.
 
 ```csharp
@@ -75,7 +75,7 @@ void AbcdServerRpc(int somenumber) { /* ... */ }
 void XyzwServerRpc(int somenumber, ServerRpcParams serverRpcParams = default) { /* ... */ }
 ```
 
-[ServerRpcParams Documentation](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.ServerRpcParams.html)
+[ServerRpcParams Documentation](xref:Unity.Netcode.ServerRpcParams)
 
 ## ClientRpc Params
 
@@ -94,7 +94,7 @@ void AbcdClientRpc(int framekey) { /* ... */ }
 void XyzwClientRpc(int framekey, ClientRpcParams clientRpcParams = default) { /* ... */ }
 ```
 
-[ClientRpcParams Documentation](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.ClientRpcParams.html)
+[ClientRpcParams Documentation](xref:Unity.Netcode.ClientRpcParams)
 
 > [!NOTE]
 > `ClientRpcSendParams`'s `TargetClientIds` property is a `ulong[]` which means everytime you try to specify a subset of target clients or even a single client target, you will have to allocate a `new ulong[]`. This pattern can quickly lead into lots of heap allocations and pressure GC which would cause GC spikes at runtime. We suggest developers cache their `ulong[]` variables or use an array pool to cycle `ulong[]` instances so that it would cause less heap allocations.

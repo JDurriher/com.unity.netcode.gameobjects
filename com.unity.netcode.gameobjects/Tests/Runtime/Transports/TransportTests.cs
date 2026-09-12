@@ -18,10 +18,10 @@ namespace Unity.Netcode.RuntimeTests
         [UnityTest]
         public IEnumerator MultipleDisconnectEventsNoop()
         {
-            var clientToDisconnect = m_ClientNetworkManagers[0];
+            var clientToDisconnect = GetNonAuthorityNetworkManager(0);
             var clientTransport = clientToDisconnect.NetworkConfig.NetworkTransport;
 
-            var otherClient = m_ClientNetworkManagers[1];
+            var otherClient = GetNonAuthorityNetworkManager(1);
 
             // Send multiple disconnect events
             clientTransport.DisconnectLocalClient();
@@ -38,6 +38,27 @@ namespace Unity.Netcode.RuntimeTests
             yield return CreateAndStartNewClient();
 
             var newExpectedClients = m_UseHost ? NumberOfClients + 1 : NumberOfClients;
+            yield return WaitForConditionOrTimeOut(() => otherClient.ConnectedClientsIds.Count == newExpectedClients);
+            AssertOnTimeout($"Incorrect number of connected clients. Expected: {newExpectedClients}, have: {otherClient.ConnectedClientsIds.Count}");
+        }
+
+        [UnityTest]
+        public IEnumerator MultipleConnectMessagesNoop()
+        {
+            var clientToConnect = GetNonAuthorityNetworkManager(0);
+            var clientTransport = clientToConnect.NetworkConfig.NetworkTransport;
+
+            var otherClient = GetNonAuthorityNetworkManager(1);
+
+            var currentConnectedClients = m_UseHost ? NumberOfClients + 1 : NumberOfClients;
+
+            clientTransport.StartClient();
+            clientTransport.StartClient();
+
+            // Start a new client to ensure everything is still working
+            yield return CreateAndStartNewClient();
+
+            var newExpectedClients = currentConnectedClients + 1;
             yield return WaitForConditionOrTimeOut(() => otherClient.ConnectedClientsIds.Count == newExpectedClients);
             AssertOnTimeout($"Incorrect number of connected clients. Expected: {newExpectedClients}, have: {otherClient.ConnectedClientsIds.Count}");
         }

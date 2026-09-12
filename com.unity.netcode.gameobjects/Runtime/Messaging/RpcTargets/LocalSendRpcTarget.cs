@@ -36,7 +36,7 @@ namespace Unity.Netcode
                     MessageType = m_NetworkManager.MessageManager.GetMessageType(typeof(RpcMessage))
                 };
 
-                behaviour.NetworkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnNextFrame, 0, reader, ref context);
+                networkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnNextFrame, 0, reader, ref context);
                 length = reader.Length;
             }
             else
@@ -46,16 +46,9 @@ namespace Unity.Netcode
                 message.Handle(ref context);
                 length = tempBuffer.Length;
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR || UNITY_MP_TOOLS_NET_STATS_MONITOR_ENABLED_IN_RELEASE
-            if (NetworkBehaviour.__rpc_name_table[behaviour.GetType()].TryGetValue(message.Metadata.NetworkRpcMethodId, out var rpcMethodName))
-            {
-                behaviour.NetworkManager.NetworkMetrics.TrackRpcSent(
-                    behaviour.NetworkManager.LocalClientId,
-                    behaviour.NetworkObject,
-                    rpcMethodName,
-                    behaviour.__getTypeName(),
-                    length);
-            }
+#if MULTIPLAYER_TOOLS && (DEBUG || UNITY_MP_TOOLS_NET_STATS_MONITOR_ENABLED_IN_RELEASE)
+            // Local invocation sends to self
+            behaviour.TrackRpcMetricsSend(m_NetworkManager.LocalClientId, ref message, length);
 #endif
         }
 

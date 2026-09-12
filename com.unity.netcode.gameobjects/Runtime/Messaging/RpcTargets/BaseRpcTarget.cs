@@ -11,6 +11,7 @@ namespace Unity.Netcode
         /// The <see cref="NetworkManager"/> instance which can be used to handle sending and receiving the specific target(s)
         /// </summary>
         protected NetworkManager m_NetworkManager;
+
         internal NetworkConnectionManager ConnectionManager;
         private bool m_Locked;
 
@@ -31,9 +32,9 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Can be used to provide additional lock checks before disposing the target.
+        /// Verifies the target can be disposed based on its lock state.
         /// </summary>
-        /// <exception cref="Exception">The exception thrown if the target is still locked when disposed.</exception>
+        /// <exception cref="Exception">Thrown when attempting to dispose a locked temporary RPC target</exception>
         protected void CheckLockBeforeDispose()
         {
             if (m_Locked)
@@ -43,7 +44,7 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Invoked when the target is disposed.
+        /// Releases resources used by the RPC target.
         /// </summary>
         public abstract void Dispose();
 
@@ -51,21 +52,10 @@ namespace Unity.Netcode
 
         private protected void SendMessageToClient(NetworkBehaviour behaviour, ulong clientId, ref RpcMessage message, NetworkDelivery delivery)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR || UNITY_MP_TOOLS_NET_STATS_MONITOR_ENABLED_IN_RELEASE
-            var size =
-#endif
-                behaviour.NetworkManager.MessageManager.SendMessage(ref message, delivery, clientId);
-
-#if DEVELOPMENT_BUILD || UNITY_EDITOR || UNITY_MP_TOOLS_NET_STATS_MONITOR_ENABLED_IN_RELEASE
-            if (NetworkBehaviour.__rpc_name_table[behaviour.GetType()].TryGetValue(message.Metadata.NetworkRpcMethodId, out var rpcMethodName))
-            {
-                behaviour.NetworkManager.NetworkMetrics.TrackRpcSent(
-                    clientId,
-                    behaviour.NetworkObject,
-                    rpcMethodName,
-                    behaviour.__getTypeName(),
-                    size);
-            }
+            var size = behaviour.NetworkManager.MessageManager.SendMessage(ref message, delivery, clientId);
+#if MULTIPLAYER_TOOLS && (DEBUG || UNITY_MP_TOOLS_NET_STATS_MONITOR_ENABLED_IN_RELEASE)
+            // Send to a specific client
+            behaviour.TrackRpcMetricsSend(clientId, ref message, size);
 #endif
         }
     }

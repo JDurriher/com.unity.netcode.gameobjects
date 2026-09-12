@@ -4,32 +4,25 @@ using UnityEngine;
 namespace Unity.Netcode.Editor.Configuration
 {
     /// <summary>
-    /// Project settings for Netcode for GameObjects.
+    /// A <see cref="ScriptableSingleton{T}"/> of type <see cref="NetcodeForGameObjectsProjectSettings"/>.
     /// </summary>
     [FilePath("ProjectSettings/NetcodeForGameObjects.asset", FilePathAttribute.Location.ProjectFolder)]
     public class NetcodeForGameObjectsProjectSettings : ScriptableSingleton<NetcodeForGameObjectsProjectSettings>
     {
-        /// <summary>
-        /// The default path for network prefabs.
-        /// </summary>
         internal static readonly string DefaultNetworkPrefabsPath = "Assets/DefaultNetworkPrefabs.asset";
-
         /// <summary>
-        /// The path to the network prefabs.
+        /// The path and name for the DefaultNetworkPrefabs asset.
         /// </summary>
         [SerializeField] public string NetworkPrefabsPath = DefaultNetworkPrefabsPath;
 
         /// <summary>
-        /// A temporary path to the network prefabs.
+        /// A temporary network prefabs path used internally.
         /// </summary>
         public string TempNetworkPrefabsPath;
 
-        /// <summary>
-        /// Called when the script instance is being loaded.
-        /// </summary>
         private void OnEnable()
         {
-            if (NetworkPrefabsPath == "")
+            if (NetworkPrefabsPath.Length == 0)
             {
                 NetworkPrefabsPath = DefaultNetworkPrefabsPath;
             }
@@ -37,14 +30,11 @@ namespace Unity.Netcode.Editor.Configuration
         }
 
         /// <summary>
-        /// Indicates whether to generate default network prefabs.
+        /// Used to determine whether the default network prefabs asset should be generated or not.
         /// </summary>
         [SerializeField]
         public bool GenerateDefaultNetworkPrefabs = true;
 
-        /// <summary>
-        /// Saves the project settings.
-        /// </summary>
         internal void SaveSettings()
         {
             Save(true);

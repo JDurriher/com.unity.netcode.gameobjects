@@ -9,14 +9,20 @@ namespace Unity.Netcode.RuntimeTests
     /// <summary>
     /// Tests that the time and tick system are initialized properly
     /// </summary>
-    public class TimeInitializationTest
+    internal class TimeInitializationTest
     {
         private int m_ClientTickCounter;
         private int m_ConnectedTick;
         private NetworkManager m_Client;
 
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            // TODO: [CmbServiceTests] if this test is deemed needed to test against the CMB server then update this test.
+            NetcodeIntegrationTestHelpers.IgnoreIfServiceEnviromentVariableSet();
+        }
+
         [UnityTest]
-        [UnityPlatform(exclude = new[] { RuntimePlatform.Android })] // Tracked in MTT-11356.
         public IEnumerator TestClientTimeInitializationOnConnect([Values(0, 1f)] float serverStartDelay, [Values(0, 1f)] float clientStartDelay, [Values(true, false)] bool isHost)
         {
             // Create multiple NetworkManager instances
@@ -82,7 +88,7 @@ namespace Unity.Netcode.RuntimeTests
 
         private void NetworkTickSystemOnTick()
         {
-            Debug.Log(m_Client.NetworkTickSystem.ServerTime.Tick);
+            //Debug.Log(m_Client.NetworkTickSystem.ServerTime.Tick);
             m_ClientTickCounter++;
         }
 
@@ -90,7 +96,7 @@ namespace Unity.Netcode.RuntimeTests
         {
             // client connected to server
             m_ConnectedTick = m_Client.NetworkTickSystem.ServerTime.Tick;
-            Debug.Log($"Connected tick: {m_ConnectedTick}");
+            //Debug.Log($"Connected tick: {m_ConnectedTick}");
         }
 
         [UnityTearDown]

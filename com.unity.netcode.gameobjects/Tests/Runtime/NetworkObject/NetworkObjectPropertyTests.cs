@@ -7,7 +7,7 @@ namespace Unity.Netcode.RuntimeTests
     /// <summary>
     /// Tests properties of NetworkObject for proper functionality.
     /// </summary>
-    public class NetworkObjectPropertyTests : NetcodeIntegrationTest
+    internal class NetworkObjectPropertyTests : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 1;
 
@@ -35,6 +35,7 @@ namespace Unity.Netcode.RuntimeTests
         /// <summary>
         /// Tests PrefabHashId returns correctly when the NetworkObject is a prefab.
         /// </summary>
+        /// <returns></returns>
         [Test]
         public void TestPrefabHashIdPropertyIsAPrefab()
         {

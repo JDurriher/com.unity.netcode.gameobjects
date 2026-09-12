@@ -30,7 +30,7 @@ In summary, you want accuracy, security, and responsiveness for your game.
 
 The authority is who has the right to make final gameplay decisions over objects. A server authoritative game has all its final gameplay decisions executed by the server.
 
-![The server gets to make the final gameplay decisions](../../images/sequence_diagrams/dealing_with_latency/Example_CharPos_ServerAuthority.png)
+![The server gets to make the final gameplay decisions](../images/sequence_diagrams/dealing_with_latency/Example_CharPos_ServerAuthority.png)
 
 #### Good for world consistency
 
@@ -52,13 +52,13 @@ Note here an input from a client can be anything, from a user interacting with a
 
 #### Issue: Reactivity
 
-An issue with server authority is you're waiting for your server to tell you to update your world. This means that if you send an input to the server and wait for the server to tell you your position change, you'll need to wait for a full **RTT** before you see the effect. There are [patterns](#patterns-to-solve-these-issues) you can use to solve this issue while still remaining server authoritative.
+An issue with server authority is you're waiting for your server to tell you to update your world. This means that if you send an input to the server and wait for the server to tell you your position change, you'll need to wait for a full **RTT** before you see the effect. There are [patterns](#patterns-to-solve-latency-issues-in-a-server-authoritative-game) you can use to solve this issue while still remaining server authoritative.
 
 ### Client authority
 
 In a client authoritative game using Netcode for GameObjects, you still have a server that's used to share world state, but clients will own and impose their reality.
 
-![The client gets to make the final gameplay decisions](../../images/sequence_diagrams/dealing_with_latency/Example_CharPos_ClientAuthority.png)
+![The client gets to make the final gameplay decisions](../images/sequence_diagrams/dealing_with_latency/Example_CharPos_ClientAuthority.png)
 
 #### Good for reactivity
 
@@ -72,17 +72,17 @@ There are possible synchronizations issues with client authoritative games. If y
 
 Multiple clients with the ability to affect the same shared object can quickly become a mess.
 
-![Multiple clients trying to impose their reality on a shared object.](../../images/sequence_diagrams/dealing_with_latency/Example_CaptureFlagPart1_ClientAuthorityIssue.png)
+![Multiple clients trying to impose their reality on a shared object.](../images/sequence_diagrams/dealing_with_latency/Example_CaptureFlagPart1_ClientAuthorityIssue.png)
 
 To avoid this, it's recommended to use client **owner** authority, which allows only the owner of an object to interact with it. Since the server controls ownership in Netcode, there's no possibility of two clients running into a [race condition](https://en.wikipedia.org/wiki/Race_condition#In_software). To allow two clients to affect the same object, you must ask the server for ownership, wait for it, then execute the client authoritative logic you want.
 
-![Multiple clients ASKING to interact with a shared object.](../../images/sequence_diagrams/dealing_with_latency/Example_CaptureFlagPart2_ServerAuthorityFix.png)
+![Multiple clients ASKING to interact with a shared object.](../images/sequence_diagrams/dealing_with_latency/Example_CaptureFlagPart2_ServerAuthorityFix.png)
 
 #### Issue: Security
 
 Client authority is a pretty dangerous door to leave open on your server because any malicious player can forge messages to say "kill player a, b, c, d, e, f, g" and win the game. It's pretty useful though for reactivity. Since the client is making all the important gameplay decisions, it can display the result of user inputs as soon as they happen instead of waiting a few hundred milliseconds.
 
-When you don't think there's any reason for your players to cheat, client authority can be a great way to have reactivity without the complexity added with techniques like [input prediction](#prediction).
+When you don't think there's any reason for your players to cheat, client authority can be a great way to have reactivity without the complexity added with techniques like [input prediction](#client-side-prediction).
 
 Another way of solving this issue in a client authoritative game is using soft validation server side. Instead of doing all simulation server side, the server only does basic validation. The server would, for example, do range checks to make sure a player isn't teleporting to places it shouldn't. Doing so is acceptable for most [PvE](https://en.wikipedia.org/wiki/Player_versus_environment) games. However, [PvP](https://en.wikipedia.org/wiki/Player_versus_player) games usually require server authority.
 
@@ -157,7 +157,7 @@ To do continuous client driven actions, there's a few more considerations to tak
 - You then need to make sure you don't send RPCs to the server (containing your authoritative state) when no data has changed and do dirty checks.
 - You'd need to send it on tick or at worst on FixedUpdate. Sending on Update() would spam your connection.
 
-A sample for a [ClientNetworkTransform](../components/networktransform.md#clientnetworktransform) has been created, so you don't have to reimplement this yourself for transform updates. A [sample](https://github.com/Unity-Technologies/com.unity.multiplayer.samples.bitesize/tree/main/Basic/ClientDriven) has been created on how to use it. See [movement script](https://github.com/Unity-Technologies/com.unity.multiplayer.samples.bitesize/blob/v1.2.1/Basic/ClientDriven/Assets/Scripts/ClientPlayerMove.cs).
+A sample for a [ClientNetworkTransform](../components/helper/networktransform.md#client-vs-server-authority) has been created, so you don't have to reimplement this yourself for transform updates. A [sample](https://github.com/Unity-Technologies/com.unity.multiplayer.samples.bitesize/tree/main/Basic/ClientDriven) has been created on how to use it. See [movement script](https://github.com/Unity-Technologies/com.unity.multiplayer.samples.bitesize/blob/v1.2.1/Basic/ClientDriven/Assets/Scripts/ClientPlayerMove.cs).
 
 > [!NOTE]
 > A rule of thumb here is to ask yourself: "Can the server correct me on this?". If it can, use server authority.
@@ -184,7 +184,7 @@ Extrapolation is an attempt to estimate a future game state, without taking into
 
 The client will normally assume that a moving object will continue in the same direction. When a new packet is received, the position may be updated.
 
-For Netcode for gameobjects (Netcode), a basic extrapolation implementation has been provided in [`NetworkTransform`](../components/networktransform.md) and is estimated between the time a tick advances in server-side animation and the update of the frame on the client-side. The game object extrapolates the next frame's values based on the ratio.
+For Netcode for gameobjects (Netcode), a basic extrapolation implementation has been provided in [NetworkTransform](../components/helper/networktransform.md) and is estimated between the time a tick advances in server-side animation and the update of the frame on the client-side. The game object extrapolates the next frame's values based on the ratio.
 
 > [!NOTE]
 > While Netcode for GameObjects doesn't have a full implementation of client-side prediction and reconciliation, you can build such a system on top of the existing client-side anticipation building-blocks, `AnticipatedNetworkVariable` and `AnticipatedNetworkTransform`. These components allow differentiating between the "authoritative" value and the value that is shown to the players. These components provide most of the information needed to implement prediction, but do require you to implement certain aspects yourself. Because of the complexity inherent in building a full client prediction system, the details of that are left for users, and we recommend only advanced users pursue this option.

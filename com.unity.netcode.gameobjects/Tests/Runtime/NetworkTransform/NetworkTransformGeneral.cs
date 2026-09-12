@@ -4,17 +4,104 @@ using UnityEngine;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    [TestFixture(HostOrServer.Host, Authority.OwnerAuthority)]
-    [TestFixture(HostOrServer.Host, Authority.ServerAuthority)]
-    public class NetworkTransformGeneral : NetworkTransformBase
+    [TestFixture(HostOrServer.Host, Authority.OwnerAuthority, NetworkTransform.InterpolationTypes.LegacyLerp)]
+    [TestFixture(HostOrServer.Host, Authority.ServerAuthority, NetworkTransform.InterpolationTypes.LegacyLerp)]
+    [TestFixture(HostOrServer.Host, Authority.OwnerAuthority, NetworkTransform.InterpolationTypes.SmoothDampening)]
+    [TestFixture(HostOrServer.Host, Authority.ServerAuthority, NetworkTransform.InterpolationTypes.SmoothDampening)]
+    [TestFixture(HostOrServer.Host, Authority.OwnerAuthority, NetworkTransform.InterpolationTypes.Lerp)]
+    [TestFixture(HostOrServer.Host, Authority.ServerAuthority, NetworkTransform.InterpolationTypes.Lerp)]
+    internal class NetworkTransformGeneral : NetworkTransformBase
     {
-        public NetworkTransformGeneral(HostOrServer testWithHost, Authority authority) :
+        public enum SmoothLerpSettings
+        {
+            SmoothLerp,
+            NormalLerp
+        }
+
+        public NetworkTransformGeneral(HostOrServer testWithHost, Authority authority, NetworkTransform.InterpolationTypes interpolationType) :
             base(testWithHost, authority, RotationCompression.None, Rotation.Euler, Precision.Full)
-        { }
+        {
+            NetworkTransform.AssignDefaultInterpolationType = true;
+            NetworkTransform.DefaultInterpolationType = interpolationType;
+        }
 
         protected override bool m_EnableTimeTravel => true;
         protected override bool m_SetupIsACoroutine => false;
         protected override bool m_TearDownIsACoroutine => false;
+
+        protected override void OnOneTimeTearDown()
+        {
+            m_EnableVerboseDebug = false;
+            NetworkTransform.AssignDefaultInterpolationType = false;
+            NetworkTransform.DefaultInterpolationType = NetworkTransform.InterpolationTypes.Lerp;
+            base.OnOneTimeTearDown();
+        }
+
+        /// <summary>
+        /// This validates an issue where if multiple state updates are received in a single frame
+        /// and interpolation is disabled, only the last state udpate processed gets applied.
+        /// </summary>
+        [Test]
+        public void TestMultipleStateSynchronization([Values] bool isLocal, [Values] bool timeTravelBetweenStateUpdates)
+        {
+            // Assure no new state updates are pushed.
+            TimeTravel(0.5f, 60);
+
+            // Disable interpolation and set world or local space
+            m_NonAuthoritativeTransform.Interpolate = false;
+            m_NonAuthoritativeTransform.InLocalSpace = isLocal;
+
+            // Get the non-authority's state
+            var localState = m_NonAuthoritativeTransform.LocalAuthoritativeNetworkState;
+
+            // Assure this is not set to avoid a false positive result with teleporting
+            localState.FlagStates.IsTeleportingNextFrame = false;
+
+            // Simulate a state update
+            localState.FlagStates.UseInterpolation = false;
+            localState.CurrentPosition = new Vector3(5.0f, 0.0f, 0.0f);
+            localState.FlagStates.SetHasPosition(NetworkTransform.Axis.X, true);
+            localState.PositionX = 5.0f;
+            localState.NetworkTick++;
+
+            var lastStateTick = localState.NetworkTick;
+            // Apply the simualted state update to the non-authority instance
+            m_NonAuthoritativeTransform.ApplyUpdatedState(localState);
+            // Simulate both having time between state updates and having state updates delivered back to back on the same frame
+            if (timeTravelBetweenStateUpdates)
+            {
+                TimeTravelAdvanceTick();
+            }
+
+            // Validate the state update was applied
+            var xValue = isLocal ? m_NonAuthoritativeTransform.transform.localPosition.x : m_NonAuthoritativeTransform.transform.position.x;
+            Assert.IsTrue(xValue == 5.0f, $"[Test1][IsLocal: {isLocal}] X axis ({xValue}) does not equal 5.0f!");
+
+
+            // Get the non-authority state
+            localState = m_NonAuthoritativeTransform.LocalAuthoritativeNetworkState;
+
+            //Assure we have not received any state updates from the authority that could skew the test
+            Assert.IsTrue(localState.NetworkTick == lastStateTick, $"Previous Non-authority state tick was {lastStateTick} but is now {localState.NetworkTick}. Authority pushed a state update.");
+
+            // Simualate a 2nd state update on a different position axis
+            localState.FlagStates.SetHasPosition(NetworkTransform.Axis.X, false);
+            localState.FlagStates.SetHasPosition(NetworkTransform.Axis.Z, true);
+            localState.PositionZ = -5.0f;
+            localState.NetworkTick++;
+            m_NonAuthoritativeTransform.ApplyUpdatedState(localState);
+            // Simulate both having time between state updates and having state updates delivered back to back on the same frame
+            if (timeTravelBetweenStateUpdates)
+            {
+                TimeTravelAdvanceTick();
+            }
+            var zValue = isLocal ? m_NonAuthoritativeTransform.transform.localPosition.z : m_NonAuthoritativeTransform.transform.position.z;
+            xValue = isLocal ? m_NonAuthoritativeTransform.transform.localPosition.x : m_NonAuthoritativeTransform.transform.position.x;
+
+            // Verify the previous state update's position and current state update's position
+            Assert.IsTrue(xValue == 5.0f, $"[Test2][IsLocal: {isLocal}] X axis ({xValue}) does not equal 5.0f!");
+            Assert.IsTrue(zValue == -5.0f, $"[Test2][IsLocal: {isLocal}] Z axis ({zValue}) does not equal -5.0f!");
+        }
 
         /// <summary>
         /// Test to verify nonAuthority cannot change the transform directly
@@ -66,7 +153,7 @@ namespace Unity.Netcode.RuntimeTests
             var halfThreshold = m_AuthoritativeTransform.RotAngleThreshold * 0.5001f;
 
             // Apply the current state prior to getting reference rotations which assures we have
-            // applied the most current rotation deltas and that all bitset flags are updated 
+            // applied the most current rotation deltas and that all bitset flags are updated
             var results = m_AuthoritativeTransform.ApplyState();
             TimeTravelAdvanceTick();
 
@@ -266,108 +353,57 @@ namespace Unity.Netcode.RuntimeTests
         /// This also tests that the original server authoritative model with client-owner driven NetworkTransforms is preserved.
         /// </remarks>
         [Test]
-        public void NonAuthorityOwnerSettingStateTest([Values] Interpolation interpolation)
+        public void NonAuthorityOwnerSettingStateTest([Values] Interpolation interpolation, [Values] SmoothLerpSettings smoothLerp)
         {
-            var interpolate = interpolation != Interpolation.EnableInterpolate;
+            m_EnableVerboseDebug = true;
+            var interpolate = interpolation == Interpolation.EnableInterpolate;
+            var usingSmoothLerp = (smoothLerp == SmoothLerpSettings.SmoothLerp) && interpolate;
+            var waitForDelay = usingSmoothLerp ? 1000 : 500;
+            m_NonAuthoritativeTransform.PositionLerpSmoothing = usingSmoothLerp;
+            m_NonAuthoritativeTransform.RotationLerpSmoothing = usingSmoothLerp;
+            m_NonAuthoritativeTransform.ScaleLerpSmoothing = usingSmoothLerp;
+
             m_AuthoritativeTransform.Interpolate = interpolate;
             m_NonAuthoritativeTransform.Interpolate = interpolate;
             m_NonAuthoritativeTransform.RotAngleThreshold = m_AuthoritativeTransform.RotAngleThreshold = 0.1f;
 
+            VerboseDebug($"Target Frame Rate: {Application.targetFrameRate}");
             // Test one parameter at a time first
-            var newPosition = new Vector3(125f, 35f, 65f);
+            var newPosition = usingSmoothLerp ? new Vector3(15f, -12f, 10f) : new Vector3(55f, -24f, 20f);
             var newRotation = Quaternion.Euler(1, 2, 3);
             var newScale = new Vector3(2.0f, 2.0f, 2.0f);
             m_NonAuthoritativeTransform.SetState(newPosition, null, null, interpolate);
-            var success = WaitForConditionOrTimeOutWithTimeTravel(() => PositionsMatchesValue(newPosition));
-            Assert.True(success, $"Timed out waiting for non-authoritative position state request to be applied!");
+            var success = WaitForConditionOrTimeOutWithTimeTravel(() => PositionsMatchesValue(newPosition), waitForDelay);
+            Assert.True(success, $"Timed out waiting for non-authoritative position state request to be applied!\n {VerboseDebugLog}");
             Assert.True(Approximately(newPosition, m_AuthoritativeTransform.transform.position), "Authoritative position does not match!");
             Assert.True(Approximately(newPosition, m_NonAuthoritativeTransform.transform.position), "Non-Authoritative position does not match!");
-
             m_NonAuthoritativeTransform.SetState(null, newRotation, null, interpolate);
-            success = WaitForConditionOrTimeOutWithTimeTravel(() => RotationMatchesValue(newRotation.eulerAngles));
-            Assert.True(success, $"Timed out waiting for non-authoritative rotation state request to be applied!");
-            Assert.True(Approximately(newRotation.eulerAngles, m_AuthoritativeTransform.transform.rotation.eulerAngles), "Authoritative rotation does not match!");
-            Assert.True(Approximately(newRotation.eulerAngles, m_NonAuthoritativeTransform.transform.rotation.eulerAngles), "Non-Authoritative rotation does not match!");
+            success = WaitForConditionOrTimeOutWithTimeTravel(() => RotationMatchesValue(newRotation.eulerAngles), waitForDelay);
+            Assert.True(success, $"Timed out waiting for non-authoritative rotation state request to be applied!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newRotation.eulerAngles, m_AuthoritativeTransform.transform.rotation.eulerAngles), $"Authoritative rotation does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newRotation.eulerAngles, m_NonAuthoritativeTransform.transform.rotation.eulerAngles), $"Non-Authoritative rotation does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newRotation.eulerAngles, m_NonAuthoritativeTransform.transform.rotation.eulerAngles), $"Non-Authoritative rotation does not match!\n {VerboseDebugLog}");
 
             m_NonAuthoritativeTransform.SetState(null, null, newScale, interpolate);
-            success = WaitForConditionOrTimeOutWithTimeTravel(() => ScaleMatchesValue(newScale));
-            Assert.True(success, $"Timed out waiting for non-authoritative scale state request to be applied!");
-            Assert.True(Approximately(newScale, m_AuthoritativeTransform.transform.localScale), "Authoritative scale does not match!");
-            Assert.True(Approximately(newScale, m_NonAuthoritativeTransform.transform.localScale), "Non-Authoritative scale does not match!");
+            success = WaitForConditionOrTimeOutWithTimeTravel(() => ScaleMatchesValue(newScale), waitForDelay);
+            Assert.True(success, $"Timed out waiting for non-authoritative scale state request to be applied!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newScale, m_AuthoritativeTransform.transform.localScale), $"Authoritative scale does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newScale, m_NonAuthoritativeTransform.transform.localScale), $"Non-Authoritative scale does not match!\n {VerboseDebugLog}");
 
             // Test all parameters at once
-            newPosition = new Vector3(55f, 95f, -25f);
+            newPosition = new Vector3(-10f, 95f, -25f);
             newRotation = Quaternion.Euler(20, 5, 322);
             newScale = new Vector3(0.5f, 0.5f, 0.5f);
 
             m_NonAuthoritativeTransform.SetState(newPosition, newRotation, newScale, interpolate);
-            success = WaitForConditionOrTimeOutWithTimeTravel(() => PositionRotationScaleMatches(newPosition, newRotation.eulerAngles, newScale));
-            Assert.True(success, $"Timed out waiting for non-authoritative position, rotation, and scale state request to be applied!");
-            Assert.True(Approximately(newPosition, m_AuthoritativeTransform.transform.position), "Authoritative position does not match!");
-            Assert.True(Approximately(newPosition, m_NonAuthoritativeTransform.transform.position), "Non-Authoritative position does not match!");
-            Assert.True(Approximately(newRotation.eulerAngles, m_AuthoritativeTransform.transform.rotation.eulerAngles), "Authoritative rotation does not match!");
-            Assert.True(Approximately(newRotation.eulerAngles, m_NonAuthoritativeTransform.transform.rotation.eulerAngles), "Non-Authoritative rotation does not match!");
-            Assert.True(Approximately(newScale, m_AuthoritativeTransform.transform.localScale), "Authoritative scale does not match!");
-            Assert.True(Approximately(newScale, m_NonAuthoritativeTransform.transform.localScale), "Non-Authoritative scale does not match!");
-        }
-
-        /// <summary>
-        /// Validates that the unreliable frame synchronization is correct on the
-        /// non-authority side when using half float precision.
-        /// </summary>
-        [Test]
-        public void UnreliableHalfPrecisionTest([Values] Interpolation interpolation)
-        {
-            var interpolate = interpolation != Interpolation.EnableInterpolate;
-            m_AuthoritativeTransform.Interpolate = interpolate;
-            m_NonAuthoritativeTransform.Interpolate = interpolate;
-            m_AuthoritativeTransform.UseHalfFloatPrecision = true;
-            m_NonAuthoritativeTransform.UseHalfFloatPrecision = true;
-            m_AuthoritativeTransform.UseUnreliableDeltas = true;
-            m_NonAuthoritativeTransform.UseUnreliableDeltas = true;
-            m_AuthoritativeTransform.AuthorityPushedTransformState += AuthorityPushedTransformState;
-            m_NonAuthoritativeTransform.NonAuthorityReceivedTransformState += NonAuthorityReceivedTransformState;
-            m_AuthoritativeTransform.MoveSpeed = 6.325f;
-            m_AuthoritativeTransform.AuthorityMove = true;
-            m_AuthoritativeTransform.DirectionToMove = GetRandomVector3(-1.0f, 1.0f);
-
-            // Iterate several times so the authority moves around enough where we get 10 frame synchs to compare against.
-            for (int i = 0; i < 10; i++)
-            {
-                m_AuthorityFrameSync = false;
-                m_NonAuthorityFrameSync = false;
-                VerboseDebug($"Starting with authority ({m_AuthoritativeTransform.transform.position}) and nonauthority({m_NonAuthoritativeTransform.transform.position})");
-                var success = WaitForConditionOrTimeOutWithTimeTravel(() => m_AuthorityFrameSync && m_NonAuthorityFrameSync, 320);
-                Assert.True(success, $"Timed out waiting for authority or nonauthority frame state synchronization!");
-                VerboseDebug($"Comparing authority ({m_AuthorityPosition}) with nonauthority({m_NonAuthorityPosition})");
-                Assert.True(Approximately(m_AuthorityPosition, m_NonAuthorityPosition), $"Non-Authoritative position {m_AuthorityPosition} does not match authortative position {m_NonAuthorityPosition}!");
-            }
-
-            m_AuthoritativeTransform.AuthorityMove = false;
-            m_AuthoritativeTransform.AuthorityPushedTransformState -= AuthorityPushedTransformState;
-            m_NonAuthoritativeTransform.NonAuthorityReceivedTransformState -= NonAuthorityReceivedTransformState;
-        }
-
-        private bool m_AuthorityFrameSync;
-        private Vector3 m_AuthorityPosition;
-        private bool m_NonAuthorityFrameSync;
-        private Vector3 m_NonAuthorityPosition;
-        private void AuthorityPushedTransformState(ref NetworkTransform.NetworkTransformState networkTransformState)
-        {
-            if (networkTransformState.UnreliableFrameSync)
-            {
-                m_AuthorityPosition = m_AuthoritativeTransform.GetSpaceRelativePosition();
-                m_AuthorityFrameSync = true;
-            }
-        }
-
-        private void NonAuthorityReceivedTransformState(ref NetworkTransform.NetworkTransformState networkTransformState)
-        {
-            if (networkTransformState.UnreliableFrameSync)
-            {
-                m_NonAuthorityPosition = networkTransformState.NetworkDeltaPosition.GetFullPosition();
-                m_NonAuthorityFrameSync = true;
-            }
+            success = WaitForConditionOrTimeOutWithTimeTravel(() => PositionRotationScaleMatches(newPosition, newRotation.eulerAngles, newScale), waitForDelay);
+            Assert.True(success, $"Timed out waiting for non-authoritative position, rotation, and scale state request to be applied!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newPosition, m_AuthoritativeTransform.transform.position), $"Authoritative position does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newPosition, m_NonAuthoritativeTransform.transform.position), $"Non-Authoritative position does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newRotation.eulerAngles, m_AuthoritativeTransform.transform.rotation.eulerAngles), $"Authoritative rotation does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newRotation.eulerAngles, m_NonAuthoritativeTransform.transform.rotation.eulerAngles), $"Non-Authoritative rotation does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newScale, m_AuthoritativeTransform.transform.localScale), $"Authoritative scale does not match!\n {VerboseDebugLog}");
+            Assert.True(Approximately(newScale, m_NonAuthoritativeTransform.transform.localScale), $"Non-Authoritative scale does not match!\n {VerboseDebugLog}");
         }
     }
 }

@@ -51,7 +51,7 @@ namespace Unity.Netcode
         /// </summary>
         NotMe,
         /// <summary>
-        /// Send this RPC to everone, filtered to the current observer list.
+        /// Send this RPC to everyone, filtered to the current observer list.
         /// Will execute locally.
         /// </summary>
         Everyone,
@@ -61,6 +61,18 @@ namespace Unity.Netcode
         /// If the server is running in dedicated server mode, this is the same as <see cref="NotServer" />.
         /// </summary>
         ClientsAndHost,
+        /// <summary>
+        /// Send this RPC to the authority.
+        /// In distributed authority mode, this will be the owner of the NetworkObject.
+        /// In normal client-server mode, this is basically the exact same thing as a server rpc.
+        /// </summary>
+        Authority,
+        /// <summary>
+        /// Send this RPC to all non-authority instances.
+        /// In distributed authority mode, this will be the non-owners of the NetworkObject.
+        /// In normal client-server mode, this is basically the exact same thing as a client rpc.
+        /// </summary>
+        NotAuthority,
         /// <summary>
         /// This RPC cannot be sent without passing in a target in RpcSendParams.
         /// </summary>
@@ -112,7 +124,6 @@ namespace Unity.Netcode
         {
             m_NetworkManager = manager;
             m_ConnectionManager = manager.ConnectionManager;
-
             Everyone = new EveryoneRpcTarget(manager);
             Owner = new OwnerRpcTarget(manager);
             NotOwner = new NotOwnerRpcTarget(manager);
@@ -121,7 +132,8 @@ namespace Unity.Netcode
             NotMe = new NotMeRpcTarget(manager);
             Me = new LocalSendRpcTarget(manager);
             ClientsAndHost = new ClientsAndHostRpcTarget(manager);
-
+            Authority = new AuthorityRpcTarget(manager);
+            NotAuthority = new NotAuthorityRpcTarget(manager);
             m_CachedProxyRpcTargetGroup = new ProxyRpcTargetGroup(manager);
             m_CachedTargetGroup = new RpcTargetGroup(manager);
             m_CachedDirectSendTarget = new DirectSendRpcTarget(manager);
@@ -146,7 +158,8 @@ namespace Unity.Netcode
             NotMe.Dispose();
             Me.Dispose();
             ClientsAndHost.Dispose();
-
+            Authority.Dispose();
+            NotAuthority.Dispose();
             m_CachedProxyRpcTargetGroup.Unlock();
             m_CachedTargetGroup.Unlock();
             m_CachedDirectSendTarget.Unlock();
@@ -157,7 +170,6 @@ namespace Unity.Netcode
             m_CachedDirectSendTarget.Dispose();
             m_CachedProxyRpcTarget.Dispose();
         }
-
 
         /// <summary>
         /// Send to the NetworkObject's current owner.
@@ -208,7 +220,7 @@ namespace Unity.Netcode
         public BaseRpcTarget NotMe;
 
         /// <summary>
-        /// Send this RPC to everone, filtered to the current observer list.
+        /// Send this RPC to everyone, filtered to the current observer list.
         /// Will execute locally.
         /// </summary>
         public BaseRpcTarget Everyone;
@@ -219,6 +231,20 @@ namespace Unity.Netcode
         /// If the server is running in dedicated server mode, this is the same as <see cref="NotServer" />.
         /// </summary>
         public BaseRpcTarget ClientsAndHost;
+
+        /// <summary>
+        /// Send this RPC to the authority.
+        /// In distributed authority mode, this will be the owner of the NetworkObject.
+        /// In normal client-server mode, this is basically the exact same thing as a server rpc.
+        /// </summary>
+        public BaseRpcTarget Authority;
+
+        /// <summary>
+        /// Send this RPC to all non-authority instances.
+        /// In distributed authority mode, this will be the non-owners of the NetworkObject.
+        /// In normal client-server mode, this is basically the exact same thing as a client rpc.
+        /// </summary>
+        public BaseRpcTarget NotAuthority;
 
         /// <summary>
         /// Send to a specific single client ID.
@@ -286,7 +312,6 @@ namespace Unity.Netcode
                     target = m_CachedProxyRpcTargetGroup;
                 }
             }
-
             target.Clear();
             foreach (var clientId in m_ConnectionManager.ConnectedClientIds)
             {

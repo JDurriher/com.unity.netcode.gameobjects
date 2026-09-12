@@ -40,7 +40,7 @@ For more examples, see [RPCs vs. NetworkVariables Examples](../../learn/rpcnetva
 
 ## NetworkTransform configuration {#networktransform-configuration}
 
-The NetworkTransform component handles the synchronization of a NetworkObject's Transform. By default, the NetworkTransform component synchronizes every part of the transform at every tick if a change bigger than the specified [threshold](../../components/networktransform.md) occurs. However, you can configure it to only synchronize the necessary data by omitting particular axeis of the position, rotation, or scale vectors. See [Restricting synchronization](../../components/networktransform.md).
+The NetworkTransform component handles the synchronization of a NetworkObject's Transform. By default, the NetworkTransform component synchronizes every part of the transform at every tick if a change bigger than the specified [threshold](../../components/helper/networktransform.md) occurs. However, you can configure it to only synchronize the necessary data by omitting particular axeis of the position, rotation, or scale vectors. See [Restricting synchronization](../../components/helper/networktransform.md).
 
 You can also increase the thresholds to reduce the frequency of updates if you don't mind reducing the accuracy and responsiveness of the replicated Transform.
 
@@ -50,7 +50,7 @@ Since the characters evolve on a plane, we only synchronize their position's x a
 
 Additionally, with the changes introduced in [Netcode for GameObjects v1.4.0](https://github.com/Unity-Technologies/com.unity.netcode.gameobjects/releases/tag/ngo%2F1.4.0), we were able to further reduce the bandwidth cost associated for some prefabs that utilized NetworkTransform. The synchronization payload was reduced by 5 bytes for the Character and the Arrow prefab inside Boss Room, for example, by enabling "Use Half Float Precision" on their respective NetworkTransforms.
 
-See [NetworkTransform](../../components/networktransform.md) for more information on the NetworkTransform component.
+See [NetworkTransform](../../components/helper/networktransform.md) for more information on the NetworkTransform component.
 
 ## Pooling {#pooling}
 
@@ -73,19 +73,19 @@ The Boss Room sample shows how to adapt some Unity Transport properties to fit i
 
 ### Disconnect Timeout {#disconnect-timeout}
 
-The [Disconnect Timeout property](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.Transports.UTP.UnityTransport.html#Unity_Netcode_Transports_UTP_UnityTransport_DisconnectTimeoutMS) controls how long the server (and the clients) wait before disconnecting. The Boss Room sample uses a Disconnect Timeout value of 10 seconds to prevent the server and the clients from hanging onto a connection for too long.
+The [Disconnect Timeout property](xref:Unity.Netcode.Transports.UTP.UnityTransport.DisconnectTimeoutMS) controls how long the server (and the clients) wait before disconnecting. The Boss Room sample uses a Disconnect Timeout value of 10 seconds to prevent the server and the clients from hanging onto a connection for too long.
 
 ### Max Connect Attempts {#max-connect-attempts}
 
-The [Max Connect Attempts property](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.Transports.UTP.UnityTransport.html#Unity_Netcode_Transports_UTP_UnityTransport_MaxConnectAttempts) controls the times a client tries to connect before declaring a connection failure. The Boss Room sample uses a Max Connect Attempts value of 10 to prevent clients from waiting too long before declaring a connection failure.
+The [Max Connect Attempts property](xref:Unity.Netcode.Transports.UTP.UnityTransport.MaxConnectAttempts) controls the times a client tries to connect before declaring a connection failure. The Boss Room sample uses a Max Connect Attempts value of 10 to prevent clients from waiting too long before declaring a connection failure.
 
 ### Connect Timeout {#connect-timeout}
 
-The [Connect Timeout property](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.Transports.UTP.UnityTransport.html#Unity_Netcode_Transports_UTP_UnityTransport_ConnectTimeoutMS) controls the number of times clients attempt to connect per second. The Boss Room sample uses a Connect Timeout value of 1 second, meaning that clients try to connect once per second. Having the Connect Timeout set to 1 second and the Max Connect Attempts set to 10 means that clients fail to connect after 10 seconds of waiting.
+The [Connect Timeout property](xref:Unity.Netcode.Transports.UTP.UnityTransport.ConnectTimeoutMS) controls the number of times clients attempt to connect per second. The Boss Room sample uses a Connect Timeout value of 1 second, meaning that clients try to connect once per second. Having the Connect Timeout set to 1 second and the Max Connect Attempts set to 10 means that clients fail to connect after 10 seconds of waiting.
 
 ### Max Packet Queue Size {#max-packet-queue-size}
 
-The [Max Packet Queue Size property](https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest?subfolder=/api/Unity.Netcode.Transports.UTP.UnityTransport.html#Unity_Netcode_Transports_UTP_UnityTransport_MaxPacketQueueSize) defines the maximum number of packets that can be sent and received during a single frame.
+The [Max Packet Queue Size property](xref:Unity.Netcode.Transports.UTP.UnityTransport.MaxPacketQueueSize) defines the maximum number of packets that can be sent and received during a single frame.
 
 The impact of surpassing the Max Packet Queue Size threshold varies depending on the packet direction (sending or receiving).
 
@@ -106,7 +106,7 @@ As a result, the maximum number of reliable packets sent or received in a single
 
 ## NetworkManager tick rate configuration {#networkmanager-tick-rate-configuration}
 
-Netcode's [NetworkManager](../../components/networkmanager.md) provides some configuration options, one of which is the [tick rate](../../advanced-topics/networktime-ticks.md). The tick rate configuration option determines the frequency at which network ticks occur. The ideal tick rate value relies on balancing smoothness, accuracy, and bandwidth usage.
+Netcode's [NetworkManager](../../components/core/networkmanager.md) provides some configuration options, one of which is the [tick rate](../../advanced-topics/networktime-ticks.md). The tick rate configuration option determines the frequency at which network ticks occur. The ideal tick rate value relies on balancing smoothness, accuracy, and bandwidth usage.
 
 Lowering the tick rate reduces the frequency of NetworkVariable update messages (because they're sent at each tick). However, since it reduces the frequency of updates, it also reduces the smoothness of gameplay for the clients. You can reduce the impact of lower tick rates by using interpolation to provide smoothness, such as in the NetworkTransform. However, because there are fewer updates, the interpolation will be less accurate because it has less information.
 

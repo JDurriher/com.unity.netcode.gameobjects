@@ -9,6 +9,7 @@ namespace Unity.Netcode
     /// Time is stored as a combination of amount of passed ticks + a duration offset.
     /// This struct is meant to replace the Unity <see cref="Time"/> API for multiplayer gameplay.
     /// </summary>
+    [Serializable]
     public struct NetworkTime
     {
         private double m_TimeSec;
@@ -45,9 +46,12 @@ namespace Unity.Netcode
         public double FixedTime => m_CachedTick * m_TickInterval;
 
         /// <summary>
-        /// Gets the fixed delta time. This value is based on the <see cref="TickRate"/> and stays constant.
-        /// Similar to <see cref="Time.fixedUnscaledTime"/> There is no equivalent to <see cref="Time.deltaTime"/>.
+        /// Gets the fixed delta time. This value is calculated by dividing 1.0 by the <see cref="TickRate"/> and stays constant.
         /// </summary>
+        /// <remarks>
+        /// This could result in a potential floating point precision variance on different systems. <br />
+        /// See <see cref="FixedDeltaTimeAsDouble"/> for a more precise value.
+        /// </remarks>
         public float FixedDeltaTime => (float)m_TickInterval;
 
         /// <summary>
@@ -75,7 +79,7 @@ namespace Unity.Netcode
             Assert.IsTrue(tickRate > 0, "Tickrate must be a positive value.");
 
             m_TickRate = tickRate;
-            m_TickInterval = 1f / m_TickRate; // potential floating point precision issue, could result in different interval on different machines
+            m_TickInterval = 1.0 / m_TickRate;
             m_CachedTickOffset = 0;
             m_CachedTick = 0;
             m_TimeSec = 0;
@@ -116,16 +120,6 @@ namespace Unity.Netcode
         public NetworkTime ToFixedTime()
         {
             return new NetworkTime(m_TickRate, m_CachedTick);
-        }
-
-        /// <summary>
-        /// Calculates a NetworkTime value representing a point in the past relative to the current time (few ticks in the past).
-        /// </summary>
-        /// <param name="ticks">The number of ticks ago we're querying the time.</param>
-        /// <returns>A NetworkTime value representing the calculated past time point</returns>
-        public NetworkTime TimeTicksAgo(int ticks)
-        {
-            return TimeTicksAgo(ticks, 0.0f);
         }
 
         /// <summary>

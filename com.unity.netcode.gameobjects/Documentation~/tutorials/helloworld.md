@@ -2,7 +2,7 @@
 
 A "Hello World" program is a computer program that outputs or displays the message "Hello, World!". Normally it's  the first program written by people learning to code. it's also used as a sanity test to make sure that a computer language is correctly installed and that the operator understands how to use it.
 
-This "Hello World" tutorial walks you through creating a project, installing Netcode for GameObjects (Netcode), and creating the basic components for your first networked game. it's also the base for the [Golden Path series](goldenpath_series/gp_intro.md).
+This "Hello World" tutorial walks you through creating a project, installing Netcode for GameObjects (Netcode), and creating the basic components for your first networked game.
 
 ## Create a new project in Unity
 
@@ -22,16 +22,16 @@ In this section we will create the basic building blocks of a multiplayer game.
 
 ### Creating Network Manager and selecting the Transport
 
-In this section we add a Network Manager and add Unity Transport to our project. The [NetworkManager](../components/networkmanager.md) is the component that has all your project's netcode-related settings. Unity Transport is the transport layer that Netcode uses for communication between the server and the clients. See [here](../advanced-topics/transports.md) for more.
+In this section we add a Network Manager and add Unity Transport to our project. The [NetworkManager](../components/core/networkmanager.md) is the component that has all your project's netcode-related settings. Unity Transport is the transport layer that Netcode uses for communication between the server and the clients. See [here](../advanced-topics/transports.md) for more.
 
 1. Right-click in the **Hierarchy** tab of the main Unity Window.
 1. Select **Create Empty**.
-1. Rename the `GameObject` **NetworkManager**.
+1. Rename the GameObject **NetworkManager**.
 2. Select **NetworkManager**.
 3. Click **Add Component** in the Inspector Tab.
 4. Select **Netcode** from the list shown.
-5. Select `NetworkManager` Component from the list displayed.
-6. Inside the `NetworkManager` component tab, locate the  `NetworkTransport` field.
+5. Select NetworkManager Component from the list displayed.
+6. Inside the NetworkManager component tab, locate the  `NetworkTransport` field.
 7. Click "Select Transport".
 8. Select `UnityTransport`.
 9. Save your scene.
@@ -42,18 +42,18 @@ This section adds in a player object and spawns it for each connected player.
 
 1. Right-click in the **Hierarchy** tab of the Unity Window to create a **3D Object > Capsule**
 1. Rename it **Player**.
-1. While **Player** is selected, add a **Netcode** > `NetworkObject` component in the Inspector Tab.
+1. While **Player** is selected, add a **Netcode** > NetworkObject component in the Inspector Tab.
 1. Click the **Assets** folder under the **Project** tab.
 2. Right-click inside the **Assets** folder to **Create** > **Folder** and call it **Prefabs**.
 3. Make **Player** a Prefab by dragging it to **Prefabs** folder you just created.
 4. Delete **Player** from scene.
 
 > [!NOTE]
-> We remove the **Player** object from the scene because we assign this network Prefab to the `Player Prefab` property in the `NetworkManager` component. The library does not support defining a player object as an in-scene placed `NetworkObject`.
+> We remove the **Player** object from the scene because we assign this network Prefab to the `Player Prefab` property in the NetworkManager component. The library does not support defining a player object as an in-scene placed NetworkObject.
 
 
-5. Select `NetworkManager`.
-6. Inside the `NetworkManager` component tab, locate the  `Player Prefab` field.
+5. Select NetworkManager.
+6. Inside the NetworkManager component tab, locate the  `Player Prefab` field.
 7. Drag this player Prefab from above into this field.
 
 > [!NOTE]
@@ -77,11 +77,11 @@ This command line helper will allow us to launch builds with a command line argu
 
 1. Right-click the **Assets** folder and create a new folder by hovering over **Create** and selecting **Folder**. Name it **Scripts**.
 2. Create a script called `NetworkCommandLine` by right-clicking on your **Scripts** folder, hovering over **Create** and selecting **C# Script**.
-3. In the **Hierarchy** menu, right-click on the `NetworkManager` and choose **Create Empty**.
+3. In the **Hierarchy** menu, right-click on the NetworkManager and choose **Create Empty**.
 
-   This will create an  empty `GameObject` with `NetworkManager` as its parent.
+   This will create an  empty GameObject with NetworkManager as its parent.
 
-4. Rename this child `GameObject` `NetworkCommandLine`.
+4. Rename this child GameObject `NetworkCommandLine`.
 5. With the new `NetworkCommandLine` object selected, click **Add Component** from the **Inspector** tab.
 6. Select **Scripts** from the drop-down and click on the `NetworkCommandLine.cs` script you created earlier.
 7. Open the `NetworkCommandLine.cs` script by double-clicking from the **Project** tab > **Assets** > **Scripts**. It will open in your text editor
@@ -268,9 +268,8 @@ You can also use the command line helper to launch a server and one or more clie
 
 See the following content to continue your journey using Netcode:
 
-* Build on the Hello World project to continue learning about different features of Netcode with the [Golden Path series](goldenpath_series/gp_intro.md).
 * Check out the educational samples to further explore Netcode and its abilities:
-  * [Boss Room](../learn/bossroom/getting-started-boss-room.md)
+  * [Boss Room](../samples/bossroom/getting-started-boss-room.md)
   * [2D Spaceshooter Bitesize Sample](../samples/bitesize/bitesize-spaceshooter.md)
   * [Invaders Bitesize Sample](../samples/bitesize/bitesize-invaders.md)
   * [Client-Driven Bitesize Sample](../samples/bitesize/bitesize-clientdriven.md)

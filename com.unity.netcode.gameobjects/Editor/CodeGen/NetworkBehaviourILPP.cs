@@ -27,7 +27,8 @@ namespace Unity.Netcode.Editor.CodeGen
 
         public override ILPPInterface GetInstance() => this;
 
-        public override bool WillProcess(ICompiledAssembly compiledAssembly) => compiledAssembly.References.Any(filePath => Path.GetFileNameWithoutExtension(filePath) == CodeGenHelpers.RuntimeAssemblyName);
+        public override bool WillProcess(ICompiledAssembly compiledAssembly) => compiledAssembly.Name == CodeGenHelpers.RuntimeAssemblyName ||
+            compiledAssembly.References.Any(filePath => Path.GetFileNameWithoutExtension(filePath) == CodeGenHelpers.RuntimeAssemblyName);
 
         private readonly List<DiagnosticMessage> m_Diagnostics = new List<DiagnosticMessage>();
 
@@ -108,7 +109,7 @@ namespace Unity.Netcode.Editor.CodeGen
 
                 if (ImportReferences(mainModule, compiledAssembly.Defines))
                 {
-                    // process `NetworkBehaviour` types
+                    // process NetworkBehaviour types
                     try
                     {
                         mainModule.GetTypes()
@@ -476,6 +477,7 @@ namespace Unity.Netcode.Editor.CodeGen
         private FieldReference m_UniversalRpcParams_Receive_SenderClientId_FieldRef;
         private TypeReference m_UniversalRpcParams_TypeRef;
         private TypeReference m_ClientRpcParams_TypeRef;
+        private TypeReference m_RpcInvokePermissions_TypeRef;
         private MethodReference m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedByMemcpy_MethodRef;
         private MethodReference m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedByMemcpyArray_MethodRef;
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
@@ -593,9 +595,7 @@ namespace Unity.Netcode.Editor.CodeGen
         private const string k_NetworkManager_IsServer = nameof(NetworkManager.IsServer);
         private const string k_NetworkManager_IsClient = nameof(NetworkManager.IsClient);
         private const string k_NetworkManager_LogLevel = nameof(NetworkManager.LogLevel);
-
         private const string k_NetworkBehaviour_rpc_func_table = nameof(NetworkBehaviour.__rpc_func_table);
-        private const string k_NetworkBehaviour_rpc_name_table = nameof(NetworkBehaviour.__rpc_name_table);
         private const string k_NetworkBehaviour_rpc_exec_stage = nameof(NetworkBehaviour.__rpc_exec_stage);
         private const string k_NetworkBehaviour_NetworkVariableFields = nameof(NetworkBehaviour.NetworkVariableFields);
         private const string k_NetworkBehaviour_beginSendServerRpc = nameof(NetworkBehaviour.__beginSendServerRpc);
@@ -615,7 +615,13 @@ namespace Unity.Netcode.Editor.CodeGen
         private const string k_NetworkVariableBase_Initialize = nameof(NetworkVariableBase.Initialize);
 
         private const string k_RpcAttribute_Delivery = nameof(RpcAttribute.Delivery);
+        private const string k_RpcAttribute_InvokePermission = nameof(RpcAttribute.InvokePermission);
+
+#pragma warning disable CS0618 // Type or member is obsolete
+        // Need to ignore the obsolete warning as the obsolete behaviour still needs to work
         private const string k_ServerRpcAttribute_RequireOwnership = nameof(ServerRpcAttribute.RequireOwnership);
+#pragma warning restore CS0618 // Type or member is obsolete
+
         private const string k_RpcParams_Server = nameof(__RpcParams.Server);
         private const string k_RpcParams_Client = nameof(__RpcParams.Client);
         private const string k_RpcParams_Ext = nameof(__RpcParams.Ext);
@@ -656,6 +662,7 @@ namespace Unity.Netcode.Editor.CodeGen
             TypeDefinition serverRpcParamsTypeDef = null;
             TypeDefinition clientRpcParamsTypeDef = null;
             TypeDefinition universalRpcParamsTypeDef = null;
+            TypeDefinition rpcInvokePermissionTypeDef = null;
             TypeDefinition fastBufferWriterTypeDef = null;
             TypeDefinition fastBufferReaderTypeDef = null;
             TypeDefinition networkVariableSerializationTypesTypeDef = null;
@@ -717,6 +724,12 @@ namespace Unity.Netcode.Editor.CodeGen
                     continue;
                 }
 
+                if (rpcInvokePermissionTypeDef == null && netcodeTypeDef.Name == nameof(RpcInvokePermission))
+                {
+                    rpcInvokePermissionTypeDef = netcodeTypeDef;
+                    continue;
+                }
+
                 if (fastBufferWriterTypeDef == null && netcodeTypeDef.Name == nameof(FastBufferWriter))
                 {
                     fastBufferWriterTypeDef = netcodeTypeDef;
@@ -729,7 +742,7 @@ namespace Unity.Netcode.Editor.CodeGen
                     continue;
                 }
 
-                if (networkVariableSerializationTypesTypeDef == null && netcodeTypeDef.Name == nameof(NetworkVariableSerializationTypes))
+                if (networkVariableSerializationTypesTypeDef == null && netcodeTypeDef.Name == nameof(NetworkVariableSerializationTypedInitializers))
                 {
                     networkVariableSerializationTypesTypeDef = netcodeTypeDef;
                     continue;
@@ -942,6 +955,7 @@ namespace Unity.Netcode.Editor.CodeGen
             }
 
             m_ClientRpcParams_TypeRef = moduleDefinition.ImportReference(clientRpcParamsTypeDef);
+            m_RpcInvokePermissions_TypeRef = moduleDefinition.ImportReference(rpcInvokePermissionTypeDef);
             m_FastBufferWriter_TypeRef = moduleDefinition.ImportReference(fastBufferWriterTypeDef);
             m_FastBufferReader_TypeRef = moduleDefinition.ImportReference(fastBufferReaderTypeDef);
 
@@ -1055,103 +1069,103 @@ namespace Unity.Netcode.Editor.CodeGen
 
                 switch (method.Name)
                 {
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedByMemcpy):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedByMemcpy):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedByMemcpy_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedByMemcpyArray):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedByMemcpyArray):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedByMemcpyArray_MethodRef = method;
                         break;
 
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedByMemcpyList):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedByMemcpyList):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedByMemcpyList_MethodRef = method;
                         break;
 #endif
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedINetworkSerializable):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedINetworkSerializable):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedINetworkSerializable_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedINetworkSerializableArray):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedINetworkSerializableArray):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedINetworkSerializableArray_MethodRef = method;
                         break;
 
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_UnmanagedINetworkSerializableList):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_UnmanagedINetworkSerializableList):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_UnmanagedINetworkSerializableList_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_NativeHashSet):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_NativeHashSet):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_NativeHashSet_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_NativeHashMap):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_NativeHashMap):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_NativeHashMap_MethodRef = method;
                         break;
 #endif
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_List):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_List):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_List_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_HashSet):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_HashSet):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_HashSet_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_Dictionary):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_Dictionary):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_Dictionary_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_ManagedINetworkSerializable):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_ManagedINetworkSerializable):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_ManagedINetworkSerializable_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_FixedString):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_FixedString):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_FixedString_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_FixedStringArray):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_FixedStringArray):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_FixedStringArray_MethodRef = method;
                         break;
 
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
-                    case nameof(NetworkVariableSerializationTypes.InitializeSerializer_FixedStringList):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeSerializer_FixedStringList):
                         m_NetworkVariableSerializationTypes_InitializeSerializer_FixedStringList_MethodRef = method;
                         break;
 #endif
 
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_ManagedIEquatable):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_ManagedIEquatable):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_ManagedIEquatable_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedIEquatable):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedIEquatable):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedIEquatable_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedIEquatableArray):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedIEquatableArray):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedIEquatableArray_MethodRef = method;
                         break;
 
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedIEquatableList):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedIEquatableList):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedIEquatableList_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_NativeHashSet):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_NativeHashSet):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_NativeHashSet_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_NativeHashMap):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_NativeHashMap):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_NativeHashMap_MethodRef = method;
                         break;
 #endif
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_List):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_List):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_List_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_HashSet):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_HashSet):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_HashSet_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_Dictionary):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_Dictionary):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_Dictionary_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedValueEquals):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedValueEquals):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedValueEquals_MethodRef = method;
                         break;
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedValueEqualsArray):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedValueEqualsArray):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedValueEqualsArray_MethodRef = method;
                         break;
 #if UNITY_NETCODE_NATIVE_COLLECTION_SUPPORT
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_UnmanagedValueEqualsList):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_UnmanagedValueEqualsList):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_UnmanagedValueEqualsList_MethodRef = method;
                         break;
 #endif
-                    case nameof(NetworkVariableSerializationTypes.InitializeEqualityChecker_ManagedClassEquals):
+                    case nameof(NetworkVariableSerializationTypedInitializers.InitializeEqualityChecker_ManagedClassEquals):
                         m_NetworkVariableSerializationTypes_InitializeEqualityChecker_ManagedClassEquals_MethodRef = method;
                         break;
                 }
@@ -1357,9 +1371,7 @@ namespace Unity.Netcode.Editor.CodeGen
                     return;
                 }
             }
-            var rpcHandlers = new List<(uint RpcMethodId, MethodDefinition RpcHandler, string RpcMethodName)>();
-
-            bool isEditorOrDevelopment = assemblyDefines.Contains("UNITY_EDITOR") || assemblyDefines.Contains("DEVELOPMENT_BUILD");
+            var rpcHandlers = new List<(uint RpcMethodId, MethodDefinition RpcHandler, string RpcMethodName, CustomAttribute rpcAttribute)>();
 
             foreach (var methodDefinition in typeDefinition.Methods)
             {
@@ -1388,7 +1400,7 @@ namespace Unity.Netcode.Editor.CodeGen
 
                 InjectWriteAndCallBlocks(methodDefinition, rpcAttribute, rpcMethodId);
 
-                rpcHandlers.Add((rpcMethodId, GenerateStaticHandler(methodDefinition, rpcAttribute, rpcMethodId), methodDefinition.Name));
+                rpcHandlers.Add((rpcMethodId, GenerateStaticHandler(methodDefinition, rpcAttribute, rpcMethodId), methodDefinition.Name, rpcAttribute));
             }
 
             GenerateVariableInitialization(typeDefinition);
@@ -1470,28 +1482,49 @@ namespace Unity.Netcode.Editor.CodeGen
                 var instructions = new List<Instruction>();
                 var processor = initializeRpcsMethodDef.Body.GetILProcessor();
 
-                foreach (var (rpcMethodId, rpcHandler, rpcMethodName) in rpcHandlers)
+                foreach (var (rpcMethodId, rpcHandler, rpcMethodName, rpcAttribute) in rpcHandlers)
                 {
                     typeDefinition.Methods.Add(rpcHandler);
 
                     MethodReference callMethod = rpcHandler;
                     if (typeDefinition.HasGenericParameters)
                     {
-                        var genericTypes = new List<TypeReference>();
-                        foreach (var parameter in typeDefinition.GenericParameters)
-                        {
-                            genericTypes.Add(parameter);
-                        }
+                        var genericTypes = new List<TypeReference>(typeDefinition.GenericParameters);
                         callMethod = callMethod.MakeGeneric(genericTypes.ToArray());
                     }
 
-                    // __registerRpc(RpcMethodId, HandleFunc, methodName);
+                    var isServerRpc = rpcAttribute.AttributeType.FullName == CodeGenHelpers.ServerRpcAttribute_FullName;
+                    var isClientRpc = rpcAttribute.AttributeType.FullName == CodeGenHelpers.ClientRpcAttribute_FullName;
+
+                    var invokePermission = isServerRpc ? RpcInvokePermission.Owner : RpcInvokePermission.Everyone;
+
+                    foreach (var attrField in rpcAttribute.Fields)
+                    {
+                        switch (attrField.Name)
+                        {
+                            case k_ServerRpcAttribute_RequireOwnership:
+                                var requireOwnership = attrField.Argument.Type == rpcHandler.Module.TypeSystem.Boolean && (bool)attrField.Argument.Value;
+                                invokePermission = requireOwnership ? RpcInvokePermission.Owner : RpcInvokePermission.Everyone;
+                                break;
+                            case k_RpcAttribute_InvokePermission:
+                                invokePermission = (RpcInvokePermission)attrField.Argument.Value;
+                                break;
+                        }
+                    }
+
+                    if (isClientRpc)
+                    {
+                        invokePermission = RpcInvokePermission.Server;
+                    }
+
+                    // __registerRpc(RpcMethodId, HandleFunc, invokePermission, methodName);
                     instructions.Add(processor.Create(OpCodes.Ldarg_0));
                     instructions.Add(processor.Create(OpCodes.Ldc_I4, unchecked((int)rpcMethodId)));
                     instructions.Add(processor.Create(OpCodes.Ldnull));
                     instructions.Add(processor.Create(OpCodes.Ldftn, callMethod));
                     instructions.Add(processor.Create(OpCodes.Newobj, m_NetworkHandlerDelegateCtor_MethodRef));
                     instructions.Add(processor.Create(OpCodes.Ldstr, rpcMethodName));
+                    instructions.Add(processor.Create(OpCodes.Ldc_I4, (int)invokePermission));
                     instructions.Add(processor.Create(OpCodes.Call, m_NetworkBehaviour___registerRpc_MethodRef));
                 }
 
@@ -1567,6 +1600,7 @@ namespace Unity.Netcode.Editor.CodeGen
         private CustomAttribute CheckAndGetRpcAttribute(MethodDefinition methodDefinition)
         {
             CustomAttribute rpcAttribute = null;
+
             foreach (var customAttribute in methodDefinition.CustomAttributes)
             {
                 var customAttributeType_FullName = customAttribute.AttributeType.FullName;
@@ -1608,17 +1642,24 @@ namespace Unity.Netcode.Editor.CodeGen
                         isValid = false;
                     }
 
-                    if (customAttributeType_FullName == CodeGenHelpers.RpcAttribute_FullName &&
-                        !methodDefinition.Name.EndsWith("Rpc", StringComparison.OrdinalIgnoreCase))
-                    {
-                        m_Diagnostics.AddError(methodDefinition, "Rpc method must end with 'Rpc' suffix!");
-                        isValid = false;
-                    }
-
                     if (customAttributeType_FullName == CodeGenHelpers.ClientRpcAttribute_FullName &&
                         !methodDefinition.Name.EndsWith("ClientRpc", StringComparison.OrdinalIgnoreCase))
                     {
                         m_Diagnostics.AddError(methodDefinition, "ClientRpc method must end with 'ClientRpc' suffix!");
+                        isValid = false;
+                    }
+
+                    if (customAttributeType_FullName == CodeGenHelpers.RpcAttribute_FullName &&
+                        !methodDefinition.Name.EndsWith("Rpc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        m_Diagnostics.AddError(methodDefinition, "Rpc method must end with 'Rpc' suffix!");
+
+                        // Extra compiler information if a method was defined as a local function
+                        if (methodDefinition.Name.Contains("Rpc|", StringComparison.OrdinalIgnoreCase) && methodDefinition.Name.StartsWith("g__", StringComparison.OrdinalIgnoreCase))
+                        {
+                            m_Diagnostics.AddError(methodDefinition, $"{methodDefinition.Name} appears to be a local function. Local functions cannot be RPCs.");
+                        }
+
                         isValid = false;
                     }
 
@@ -1650,6 +1691,29 @@ namespace Unity.Netcode.Editor.CodeGen
 
                 return null;
             }
+
+            bool hasInvokePermission = false, hasRequireOwnership = false;
+
+            foreach (var argument in rpcAttribute.Fields)
+            {
+                switch (argument.Name)
+                {
+                    case k_ServerRpcAttribute_RequireOwnership:
+                        hasRequireOwnership = true;
+                        break;
+                    case k_RpcAttribute_InvokePermission:
+                        hasInvokePermission = true;
+                        break;
+                }
+            }
+
+            if (hasInvokePermission && hasRequireOwnership)
+            {
+                m_Diagnostics.AddError($"{methodDefinition.Name} cannot declare both RequireOwnership and InvokePermission!");
+                return null;
+            }
+
+
             // Checks for IsSerializable are moved to later as the check is now done by dynamically seeing if any valid
             // serializer OR extension method exists for it.
             return rpcAttribute;
@@ -2086,9 +2150,10 @@ namespace Unity.Netcode.Editor.CodeGen
                 {
                     typeMethod = GetFastBufferReaderReadMethod(k_ReadValueInPlaceMethodName, paramType);
                 }
-                else
-#endif
+                else if (paramType.Resolve().FullName == "Unity.Collections.NativeArray`1")
+#else
                 if (paramType.Resolve().FullName == "Unity.Collections.NativeArray`1")
+#endif
                 {
                     typeMethod = GetFastBufferReaderReadMethod(k_ReadValueTempMethodName, paramType);
                 }
@@ -2197,18 +2262,24 @@ namespace Unity.Netcode.Editor.CodeGen
             {
                 var returnInstr = processor.Create(OpCodes.Ret);
                 var lastInstr = processor.Create(OpCodes.Nop);
+                var logNextInstr = processor.Create(OpCodes.Nop);
 
                 // networkManager = this.NetworkManager;
                 instructions.Add(processor.Create(OpCodes.Ldarg_0));
                 instructions.Add(processor.Create(OpCodes.Call, m_NetworkBehaviour_getNetworkManager_MethodRef));
                 instructions.Add(processor.Create(OpCodes.Stloc, netManLocIdx));
 
-                // if (networkManager == null || !networkManager.IsListening) return;
+                // if (networkManager == null || !networkManager.IsListening) { ... return };
                 instructions.Add(processor.Create(OpCodes.Ldloc, netManLocIdx));
-                instructions.Add(processor.Create(OpCodes.Brfalse, returnInstr));
+                instructions.Add(processor.Create(OpCodes.Brfalse_S, logNextInstr));
                 instructions.Add(processor.Create(OpCodes.Ldloc, netManLocIdx));
                 instructions.Add(processor.Create(OpCodes.Callvirt, m_NetworkManager_getIsListening_MethodRef));
-                instructions.Add(processor.Create(OpCodes.Brtrue, lastInstr));
+                instructions.Add(processor.Create(OpCodes.Brtrue_S, lastInstr));
+
+                // Debug.LogError(...);
+                instructions.Add(logNextInstr);
+                instructions.Add(processor.Create(OpCodes.Ldstr, "Rpc methods can only be invoked after starting the NetworkManager!"));
+                instructions.Add(processor.Create(OpCodes.Call, m_Debug_LogError_MethodRef));
 
                 instructions.Add(returnInstr);
                 instructions.Add(lastInstr);
@@ -2338,7 +2409,7 @@ namespace Unity.Netcode.Editor.CodeGen
                     instructions.Add(processor.Create(OpCodes.Ldloca, rpcAttributeParamsIdx));
                     instructions.Add(processor.Create(OpCodes.Initobj, m_AttributeParamsType_TypeRef));
 
-                    RpcAttribute.RpcAttributeParams dflt = default;
+                    RpcAttribute.RpcAttributeParams defaultParameters = default;
                     foreach (var field in rpcAttribute.Fields)
                     {
                         var found = false;
@@ -2348,8 +2419,8 @@ namespace Unity.Netcode.Editor.CodeGen
                             {
                                 found = true;
                                 var value = field.Argument.Value;
-                                var paramField = dflt.GetType().GetField(attrField.Name);
-                                if (value != paramField.GetValue(dflt))
+                                var paramField = defaultParameters.GetType().GetField(attrField.Name);
+                                if (value != paramField.GetValue(defaultParameters))
                                 {
                                     instructions.Add(processor.Create(OpCodes.Ldloca, rpcAttributeParamsIdx));
                                     var type = value.GetType();
@@ -2392,6 +2463,7 @@ namespace Unity.Netcode.Editor.CodeGen
                             m_Diagnostics.AddError($"{nameof(RpcAttribute)} contains field {field} which is not present in {nameof(RpcAttribute.RpcAttributeParams)}.");
                         }
                     }
+
                     instructions.Add(processor.Create(OpCodes.Ldloc, rpcAttributeParamsIdx));
 
                     // defaultTarget
@@ -2454,11 +2526,11 @@ namespace Unity.Netcode.Editor.CodeGen
                     {
                         if (paramIndex != paramCount - 1)
                         {
-                            m_Diagnostics.AddError(methodDefinition, $"{nameof(RpcParams)} must be the last parameter in a ClientRpc.");
+                            m_Diagnostics.AddError(methodDefinition, $"{methodDefinition.Name} is invalid. {nameof(RpcParams)} must be the last parameter in a ClientRpc.");
                         }
                         if (!isGenericRpc)
                         {
-                            m_Diagnostics.AddError($"Only Rpcs may accept {nameof(RpcParams)} as a parameter.");
+                            m_Diagnostics.AddError($"{methodDefinition.Name} is invalid. Only Rpcs may accept {nameof(RpcParams)} as a parameter.");
                         }
                         continue;
                     }
@@ -2891,8 +2963,6 @@ namespace Unity.Netcode.Editor.CodeGen
             var processor = rpcHandler.Body.GetILProcessor();
 
             var isServerRpc = rpcAttribute.AttributeType.FullName == CodeGenHelpers.ServerRpcAttribute_FullName;
-            var isCientRpc = rpcAttribute.AttributeType.FullName == CodeGenHelpers.ClientRpcAttribute_FullName;
-            var isGenericRpc = rpcAttribute.AttributeType.FullName == CodeGenHelpers.RpcAttribute_FullName;
             var requireOwnership = true; // default value MUST be == `ServerRpcAttribute.RequireOwnership`
             foreach (var attrField in rpcAttribute.Fields)
             {
@@ -3143,11 +3213,7 @@ namespace Unity.Netcode.Editor.CodeGen
             var callMethod = (MethodReference)methodDefinition;
             if (castType.HasGenericParameters)
             {
-                var genericTypes = new List<TypeReference>();
-                foreach (var parameter in castType.GenericParameters)
-                {
-                    genericTypes.Add(parameter);
-                }
+                var genericTypes = new List<TypeReference>(castType.GenericParameters);
                 castType = castType.MakeGenericInstanceType(genericTypes.ToArray());
                 callMethod = callMethod.MakeGeneric(genericTypes.ToArray());
             }

@@ -33,7 +33,7 @@ In contrast to dedicated servers, listen servers are cheaper without the need to
 
 ## Connecting to a listen server
 
-Personal computers are hidden behind NATs (Network Address Translation devices) and routers to protect them from direct access. To connect to a listen server, you may choose an option such as [port forwarding](#port-forwarding), a [relay server](#relay-server), [NAT punch-through](#nat-punchthrough), or a [NAT punch with relay fallback](#nat-punch-and-relay-fallback).
+Personal computers are hidden behind NATs (Network Address Translation devices) and routers to protect them from direct access. To connect to a listen server, you may choose an option such as [port forwarding](#port-forwarding), a [relay server](#relay-server), [NAT punch-through](#nat-punch-through), or a [NAT punch with relay fallback](#nat-punch-and-relay-fallback).
 
 ### Port Forwarding
 
@@ -67,9 +67,9 @@ A relay server costs money, and the round trip times for packet exchange may be 
 Network Address Translation (NAT) punch-through, also known as hole punching, opens a direct connection without port forwarding. When successful, clients are directly connected to each other to exchange packets. However, depending on the NAT types among the clients, NAT punching often fails.
 
 Ways to NAT punch:
-* Session Traversal Utilities for NAT [STUN](../reference/glossary/network-terms.md#session-traversal-utilities-for-nat-stun)
-* Interactive Connectivity Establishment [ICE](../reference/glossary/network-terms.md#interactive-connectivity-establishment-ice)
-* User Datagram Protocol [(UDP) hole punching](../reference/glossary/network-terms.md#udp-hole-punching)
+* Session Traversal Utilities for NAT STUN
+* Interactive Connectivity Establishment ICE
+* User Datagram Protocol (UDP) hole punching
 
 Because of its high rate of failure, NAT punch-through is typically only used with a relay fallback.
 

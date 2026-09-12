@@ -8,11 +8,8 @@ namespace Unity.Netcode
         public override void Dispose()
         {
             m_ServerRpcTarget.Dispose();
-            if (m_GroupSendTarget != null)
-            {
-                m_GroupSendTarget.Target.Dispose();
-                m_GroupSendTarget = null;
-            }
+            m_GroupSendTarget?.Target.Dispose();
+            m_GroupSendTarget = null;
         }
 
         internal override void Send(NetworkBehaviour behaviour, ref RpcMessage message, NetworkDelivery delivery, RpcParams rpcParams)
@@ -49,7 +46,11 @@ namespace Unity.Netcode
                     {
                         continue;
                     }
-                    if (clientId == NetworkManager.ServerClientId)
+                    // In distributed authority mode, we send to target id 0 (which would be a DAHost).
+                    // We only add when there is a "DAHost" by
+                    // - excluding the server id when using client-server (i.e. !m_NetworkManager.DistributedAuthorityMode )
+                    // - excluding if connected to the CMB backend service (i.e. we don't want to send to service as it will broadcast it back)
+                    if (clientId == NetworkManager.ServerClientId && (!m_NetworkManager.DistributedAuthorityMode || m_NetworkManager.CMBServiceConnection))
                     {
                         continue;
                     }
@@ -57,7 +58,9 @@ namespace Unity.Netcode
                 }
             }
             m_GroupSendTarget.Target.Send(behaviour, ref message, delivery, rpcParams);
-            if (!behaviour.IsServer)
+
+            // In distributed authority mode, we don't use ServerRpc
+            if (!behaviour.IsServer && !m_NetworkManager.DistributedAuthorityMode)
             {
                 m_ServerRpcTarget.Send(behaviour, ref message, delivery, rpcParams);
             }

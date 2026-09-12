@@ -7,7 +7,7 @@ using Random = System.Random;
 
 namespace Unity.Netcode.EditorTests
 {
-    public class FastBufferReaderTests : BaseFastBufferReaderWriterTest
+    internal class FastBufferReaderTests : BaseFastBufferReaderWriterTest
     {
         private void WriteCheckBytes(FastBufferWriter writer, int writeSize, string failMessage = "")
         {
@@ -259,7 +259,7 @@ namespace Unity.Netcode.EditorTests
                     }
                 }
             }
-            value = new T();
+            value = default;
 
             Assert.NotNull(method);
 
@@ -766,8 +766,7 @@ namespace Unity.Netcode.EditorTests
                 {
                     VerifyPositionAndLength(reader, writer.Length);
 
-                    var result = new T();
-                    reader.ReadValueSafe(out result);
+                    reader.ReadValueSafe(out T result);
                     Assert.AreEqual(fixedStringValue, result);
 
                     VerifyCheckBytes(reader, serializedValueSize);
@@ -924,6 +923,50 @@ namespace Unity.Netcode.EditorTests
             }
         }
 
+        /// <summary>
+        /// This validates that <see cref="FastBufferReader"/> catches a potential
+        /// scenario where the string's character count value has already been read
+        /// due to an error within user script and the resultant character count
+        /// multiplied times 2 (when using 2 bytes vs 1) causes the length to roll over
+        /// to a negative value which, in turn, causes the reader to attempt to read
+        /// into restricted memory and causes the editor to crash.
+        /// </summary>
+        [Test]
+        public void ReadingStringAfterStringLengthHasAlreadyBeenRead([Values] bool isSafeRead)
+        {
+            // This was an issue uncovered in UUM-145752 that resulted
+            // in the below text to result in a length that when using
+            // 2 bytes per character would cause the skewed size to roll
+            // over into a negative value causing the editor to crash
+            // when it attempted to read a large negative offset value.
+            string valueToTest = "true";
+
+            var serializedValueSize = FastBufferWriter.GetWriteSize(valueToTest);
+
+            using var writer = new FastBufferWriter(serializedValueSize, Allocator.Temp);
+            writer.WriteValueSafe(valueToTest);
+
+            using var reader = new FastBufferReader(writer, Allocator.Temp);
+
+            // Read the value of the character count before trying to read the string
+            // This mocks user code having read too far into a stream causing the position to be skewed such that
+            // the string reader reads the some of the bytes for the actual text as the length.
+            reader.ReadByteSafe(out byte count);
+            Assert.True(count == valueToTest.Length, $"Count ({count}) is not the expected size of {valueToTest.Length}!");
+            if (isSafeRead)
+            {
+                // This should throw an overflow exception but should not crash the editor.
+                Assert.Throws<OverflowException>(() => reader.ReadValueSafe(out string valueRead));
+            }
+            else
+            {
+                // Assume user does a pre-calculation of the size to be read:
+                Assert.IsTrue(reader.TryBeginRead(count), "Reader denied read permission");
+
+                // This should throw an overflow exception but should not crash the editor.
+                Assert.Throws<OverflowException>(() => reader.ReadValue(out string valueRead));
+            }
+        }
 
         [TestCase(1, 0)]
         [TestCase(2, 0)]

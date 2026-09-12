@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Unity.Netcode.Editor.Configuration;
+using Unity.Netcode.Logging;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -27,6 +28,7 @@ namespace Unity.Netcode.Editor
         private static void InitializeOnload()
         {
             Singleton = new NetworkManagerHelper();
+
             NetworkManager.NetworkManagerHelper = Singleton;
             EditorApplication.playModeStateChanged -= EditorApplication_playModeStateChanged;
             EditorApplication.hierarchyChanged -= EditorApplication_hierarchyChanged;
@@ -91,7 +93,7 @@ namespace Unity.Netcode.Editor
             var activeScene = SceneManager.GetActiveScene();
             var isSceneInBuildSettings = scenesList.Count((c) => c.path == activeScene.path) == 1;
 #if UNITY_2023_1_OR_NEWER
-            var networkManager = Object.FindFirstObjectByType<NetworkManager>();
+            var networkManager = Object.FindAnyObjectByType<NetworkManager>();
 #else
             var networkManager = Object.FindObjectOfType<NetworkManager>();
 #endif
@@ -161,19 +163,17 @@ namespace Unity.Netcode.Editor
 
                 if (!EditorApplication.isPlaying && !editorTest)
                 {
-                    EditorUtility.DisplayDialog($"Removing {nameof(NetworkObject)}", NetworkManagerAndNetworkObjectNotAllowedMessage(), "OK");
+                    EditorUtility.DisplayDialog($"Removing {nameof(NetworkObject)}", k_NetworkManagerAndNetworkObjectNotAllowedMessage, "OK");
                 }
                 else
                 {
-                    Debug.LogError(NetworkManagerAndNetworkObjectNotAllowedMessage());
+                    networkManager.Log.Error(new Context(LogLevel.Error, k_NetworkManagerAndNetworkObjectNotAllowedMessage));
                 }
             }
         }
 
-        public string NetworkManagerAndNetworkObjectNotAllowedMessage()
-        {
-            return $"A {nameof(GameObject)} cannot have both a {nameof(NetworkManager)} and {nameof(NetworkObject)} assigned to it or any children under it.";
-        }
+        private static readonly string k_NetworkManagerAndNetworkObjectNotAllowedMessage = $"A {nameof(GameObject)} cannot have both a {nameof(NetworkManager)} and {nameof(NetworkObject)} assigned to it or any children under it.";
+        public string NetworkManagerAndNetworkObjectNotAllowedMessage() => k_NetworkManagerAndNetworkObjectNotAllowedMessage;
 
         /// <summary>
         /// Handles notifying the user, via display dialog window, that they have nested a NetworkManager.
@@ -195,9 +195,9 @@ namespace Unity.Netcode.Editor
                 {
                     return isParented;
                 }
-                else // If we are no longer a child, then we can remove ourself from this list
-                if (transform.root == gameObject.transform)
+                else if (transform.root == gameObject.transform)
                 {
+                    // If we are no longer a child, then we can remove ourself from this list
                     s_LastKnownNetworkManagerParents.Remove(networkManager);
                 }
             }
@@ -214,7 +214,7 @@ namespace Unity.Netcode.Editor
                 }
                 else
                 {
-                    Debug.LogError(message);
+                    networkManager.Log.Error(new Context(LogLevel.Error, message));
                 }
 
                 if (!s_LastKnownNetworkManagerParents.ContainsKey(networkManager) && isParented)
@@ -223,6 +223,17 @@ namespace Unity.Netcode.Editor
                 }
             }
             return isParented;
+        }
+
+        internal NetcodeAnalytics NetcodeAnalytics = new NetcodeAnalytics();
+
+        /// <summary>
+        /// Directly define the interface method to keep this internal
+        /// </summary>
+        /// <returns>The <see cref="NetcodeAnalytics"/> instance which is derived from the <see cref="NetworkManager.NetcodeAnalytics"/> abstract class.</returns>
+        NetworkManager.NetcodeAnalytics NetworkManager.INetworkManagerHelper.Analytics()
+        {
+            return NetcodeAnalytics;
         }
     }
 #endif

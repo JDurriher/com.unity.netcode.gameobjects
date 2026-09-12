@@ -20,7 +20,7 @@ namespace Unity.Netcode.Transports.SinglePlayer
         /// <inheritdoc/>
         public override ulong ServerClientId { get; } = 0;
 
-        internal static string NotStartingAsHostErrorMessage = $"When using {nameof(SinglePlayerTransport)}, you must start a hosted session so both client and server are available locally.";
+        internal static readonly string NotStartingAsHostErrorMessage = $"When using {nameof(SinglePlayerTransport)}, you must start a hosted session so both client and server are available locally.";
 
         private struct MessageData
         {
@@ -31,8 +31,11 @@ namespace Unity.Netcode.Transports.SinglePlayer
         }
 
         private static Dictionary<ulong, Queue<MessageData>> s_MessageQueue = new Dictionary<ulong, Queue<MessageData>>();
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticsOnLoad() => s_MessageQueue = new Dictionary<ulong, Queue<MessageData>>();
+#endif
 
-        private bool m_Initialized;
         private ulong m_TransportId = 0;
         private NetworkManager m_NetworkManager;
 
@@ -133,6 +136,12 @@ namespace Unity.Netcode.Transports.SinglePlayer
         {
             s_MessageQueue.Clear();
             m_TransportId = 0;
+        }
+
+        /// <inheritdoc/>
+        protected override NetworkTopologyTypes OnCurrentTopology()
+        {
+            return m_NetworkManager != null ? m_NetworkManager.NetworkConfig.NetworkTopology : NetworkTopologyTypes.ClientServer;
         }
 
         /// <inheritdoc/>

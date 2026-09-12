@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using System.Text;
 using NUnit.Framework;
 using Unity.Netcode.TestHelpers.Runtime;
@@ -8,8 +7,10 @@ using UnityEngine.TestTools;
 
 namespace Unity.Netcode.RuntimeTests
 {
-    [TestFixture(NetworkSpawnTypes.OnNetworkSpawn)]
-    [TestFixture(NetworkSpawnTypes.OnNetworkPostSpawn)]
+    [TestFixture(NetworkTopologyTypes.ClientServer, NetworkSpawnTypes.OnNetworkSpawn)]
+    [TestFixture(NetworkTopologyTypes.ClientServer, NetworkSpawnTypes.OnNetworkPostSpawn)]
+    [TestFixture(NetworkTopologyTypes.DistributedAuthority, NetworkSpawnTypes.OnNetworkSpawn)]
+    [TestFixture(NetworkTopologyTypes.DistributedAuthority, NetworkSpawnTypes.OnNetworkPostSpawn)]
     internal class ParentingDuringSpawnTests : IntegrationTestWithApproximation
     {
         protected override int NumberOfClients => 2;
@@ -25,7 +26,6 @@ namespace Unity.Netcode.RuntimeTests
         private GameObject m_ParentPrefab;
         private GameObject m_ChildPrefab;
         private NetworkObject m_AuthorityInstance;
-        private List<NetworkManager> m_NetworkManagers = new List<NetworkManager>();
         private StringBuilder m_Errors = new StringBuilder();
 
         public class ParentDuringSpawnBehaviour : NetworkBehaviour
@@ -48,7 +48,7 @@ namespace Unity.Netcode.RuntimeTests
 
             public override void OnNetworkSpawn()
             {
-                if (IsServer && NetworkSpawnType == NetworkSpawnTypes.OnNetworkSpawn)
+                if (HasAuthority && NetworkSpawnType == NetworkSpawnTypes.OnNetworkSpawn)
                 {
                     SpawnThenParent();
                 }
@@ -58,7 +58,7 @@ namespace Unity.Netcode.RuntimeTests
 
             protected override void OnNetworkPostSpawn()
             {
-                if (IsServer && NetworkSpawnType == NetworkSpawnTypes.OnNetworkPostSpawn)
+                if (HasAuthority && NetworkSpawnType == NetworkSpawnTypes.OnNetworkPostSpawn)
                 {
                     SpawnThenParent();
                 }
@@ -66,7 +66,7 @@ namespace Unity.Netcode.RuntimeTests
             }
         }
 
-        public ParentingDuringSpawnTests(NetworkSpawnTypes networkSpawnType) : base()
+        public ParentingDuringSpawnTests(NetworkTopologyTypes networkTopology, NetworkSpawnTypes networkSpawnType) : base(networkTopology)
         {
             m_NetworkSpawnType = networkSpawnType;
         }
@@ -142,11 +142,7 @@ namespace Unity.Netcode.RuntimeTests
         [UnityTest]
         public IEnumerator ParentDuringSpawn()
         {
-            m_NetworkManagers.Clear();
-            var authorityNetworkManager = m_ServerNetworkManager;
-
-            m_NetworkManagers.AddRange(m_ClientNetworkManagers);
-            m_NetworkManagers.Add(m_ServerNetworkManager);
+            var authorityNetworkManager = GetAuthorityNetworkManager();
 
             m_AuthorityInstance = SpawnObject(m_ParentPrefab, authorityNetworkManager).GetComponent<NetworkObject>();
 

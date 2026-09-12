@@ -10,7 +10,7 @@ namespace Unity.Netcode.Editor.Configuration
     public class NetworkPrefabProcessor : AssetPostprocessor
     {
         /// <summary>
-        /// Gets or sets the default path for network prefabs.
+        /// The path to the default network prefabs list.
         /// </summary>
         public static string DefaultNetworkPrefabsPath
         {

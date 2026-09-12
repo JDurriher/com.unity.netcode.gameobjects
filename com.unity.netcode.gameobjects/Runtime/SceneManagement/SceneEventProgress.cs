@@ -55,11 +55,14 @@ namespace Unity.Netcode
         /// This is returned when a client attempts to perform a server only action
         /// </summary>
         ServerOnlyAction,
+        /// <summary>
+        /// This is returned when a client that is not the session owner attempts to perform a session owner only action
+        /// </summary>
+        SessionOwnerOnlyAction,
     }
 
     /// <summary>
-    /// Server side only:
-    /// This tracks the progress of clients during a load or unload scene event
+    /// Tracks a local scene operation and, on the authority, peer progress during load or unload.
     /// </summary>
     public class SceneEventProgress
     {
@@ -87,11 +90,11 @@ namespace Unity.Netcode
         internal Action<uint> OnSceneEventCompleted;
 
         /// <summary>
-        /// This will make sure that we only have timed out if we never completed
+        /// Reports whether the deadline elapsed; aggregate finalization is guarded separately.
         /// </summary>
         internal bool HasTimedOut()
         {
-            return m_NetworkManager == null || WhenSceneEventHasTimedOut <= m_NetworkManager.RealTimeProvider.RealTimeSinceStartup;
+            return WhenSceneEventHasTimedOut <= m_NetworkManager.RealTimeProvider.RealTimeSinceStartup;
         }
 
         /// <summary>
@@ -104,6 +107,11 @@ namespace Unity.Netcode
 
         private Coroutine m_TimeOutCoroutine;
         private Func<bool> m_AsyncOperationCompletionCheck;
+        private bool m_AsyncOperationCompletionSignaled;
+        private bool m_SceneEventFinished;
+
+        private bool IsLocalOperationDone => m_AsyncOperationCompletionCheck?.Invoke() ?? false;
+        private bool HasLocalOperationCompleted => m_AsyncOperationCompletionSignaled && IsLocalOperationDone;
 
         private NetworkManager m_NetworkManager { get; }
 
@@ -118,9 +126,8 @@ namespace Unity.Netcode
             var clients = new List<ulong>();
             if (completedSceneEvent)
             {
-                // If we are the host, then add the host-client to the list
-                // of clients that completed if the AsyncOperation is done.
-                if (m_NetworkManager.IsHost && m_AsyncOperationCompletionCheck.Invoke())
+                // Include the host/session owner only after its ready local operation signals completion.
+                if ((m_NetworkManager.IsHost || m_NetworkManager.LocalClient.IsSessionOwner) && HasLocalOperationCompleted)
                 {
                     clients.Add(m_NetworkManager.LocalClientId);
                 }
@@ -136,10 +143,8 @@ namespace Unity.Netcode
             }
             else
             {
-                // If we are the host, then add the host-client to the list
-                // of clients that did not complete if the AsyncOperation is
-                // not done.
-                if (m_NetworkManager.IsHost && !m_AsyncOperationCompletionCheck.Invoke())
+                // A ready-but-unsignaled host still belongs in the incomplete list.
+                if (m_NetworkManager.IsHost && !HasLocalOperationCompleted)
                 {
                     clients.Add(m_NetworkManager.LocalClientId);
                 }
@@ -157,22 +162,20 @@ namespace Unity.Netcode
             if (status == SceneEventProgressStatus.Started)
             {
                 m_NetworkManager = networkManager;
-
-                if (networkManager.IsServer)
+                WhenSceneEventHasTimedOut = networkManager.RealTimeProvider.RealTimeSinceStartup + networkManager.NetworkConfig.LoadSceneTimeOut;
+                if ((networkManager.IsServer && !networkManager.DistributedAuthorityMode) || (networkManager.DistributedAuthorityMode && networkManager.LocalClient.IsSessionOwner))
                 {
                     m_NetworkManager.OnClientDisconnectCallback += OnClientDisconnectCallback;
                     // Track the clients that were connected when we started this event
                     foreach (var connectedClientId in networkManager.ConnectionManager.ConnectedClientIds)
                     {
-                        // Ignore the host client
-                        if (NetworkManager.ServerClientId == connectedClientId)
+                        // Ignore the host or session owner
+                        if ((!networkManager.DistributedAuthorityMode && NetworkManager.ServerClientId == connectedClientId) || (networkManager.DistributedAuthorityMode && networkManager.CurrentSessionOwner == connectedClientId))
                         {
                             continue;
                         }
                         ClientsProcessingSceneEvent.Add(connectedClientId, false);
                     }
-
-                    WhenSceneEventHasTimedOut = networkManager.RealTimeProvider.RealTimeSinceStartup + networkManager.NetworkConfig.LoadSceneTimeOut;
                     m_TimeOutCoroutine = m_NetworkManager.StartCoroutine(TimeOutSceneEventProgress());
                 }
             }
@@ -222,13 +225,21 @@ namespace Unity.Netcode
         }
 
         /// <summary>
+        /// Returns whether the SceneEventType is related to an unloading event.
+        /// </summary>
+        internal bool IsUnloading()
+        {
+            return SceneEventType is SceneEventType.Unload or SceneEventType.UnloadComplete or SceneEventType.UnloadEventCompleted;
+        }
+
+        /// <summary>
         /// Determines if the scene event has finished for both
         /// client(s) and server.
         /// </summary>
         /// <remarks>
         /// The server checks if all known clients processing this scene event
-        /// have finished and then it returns its local AsyncOperation status.
-        /// Clients finish when their AsyncOperation finishes.
+        /// have finished and then checks signaled local completion and readiness.
+        /// Clients finish when their ready local operation signals completion.
         /// </remarks>
         private bool HasFinished()
         {
@@ -248,27 +259,45 @@ namespace Unity.Netcode
                 }
             }
 
-            // Return the local scene event's AsyncOperation status
-            // Note: Integration tests process scene loading through a queue
-            // and the AsyncOperation could not be assigned for several
-            // network tick periods. Return false if that is the case.
-            return m_AsyncOperationCompletionCheck?.Invoke() ?? false;
+            // Queued operations may not have a provider yet; readiness can also precede its signal.
+            // Neither state counts as successful local completion. The deadline may still finalize
+            // aggregate progress as timed out while the actual local operation continues.
+            return HasLocalOperationCompleted;
         }
 
         /// <summary>
         /// Sets the AsyncOperation for the scene load/unload event
         /// </summary>
-        public void SetAsyncOperation(AsyncOperation asyncOperation) => asyncOperation.completed += _ =>
-            GetAsyncOperationCompletionHook(check: () => asyncOperation.isDone).Invoke();
+        public void SetAsyncOperation(AsyncOperation asyncOperation)
+        {
+            if (asyncOperation == null)
+            {
+                throw new ArgumentNullException(nameof(asyncOperation));
+            }
+            var complete = GetAsyncOperationCompletionHook(() => asyncOperation.isDone);
+            asyncOperation.completed += _ => complete();
+        }
 
         /// <summary>
-        /// Provides a way to hook completion logic to a managed asynchronous scene loading or unloading operation
+        /// Supplies completion for a scene operation that is not represented by a Unity AsyncOperation.
+        /// Invoke the returned hook on the main thread after activation/unload finishes. Pending calls are ignored;
+        /// completion and finalization are idempotent. A ready check alone must not report a failed load as success.
+        /// Aggregate timeout does not cancel the local operation: a valid later signal must still finish its scene bookkeeping.
         /// </summary>
         public Action GetAsyncOperationCompletionHook(Func<bool> check)
         {
+            if (check == null)
+            {
+                throw new ArgumentNullException(nameof(check));
+            }
             m_AsyncOperationCompletionCheck = check;
             return () =>
             {
+                if (m_AsyncOperationCompletionSignaled || !IsLocalOperationDone)
+                {
+                    return;
+                }
+                m_AsyncOperationCompletionSignaled = true;
                 // Don't invoke the callback if the network session is disconnected
                 // during a SceneEventProgress
                 if (IsNetworkSessionActive())
@@ -276,6 +305,7 @@ namespace Unity.Netcode
                     OnSceneEventCompleted?.Invoke(SceneEventId);
                 }
 
+                // Aggregate progress may already have timed out; its finalization guard prevents a second report.
                 // Go ahead and try finishing even if the network session is terminated/terminating
                 // as we might need to stop the coroutine
                 TryFinishingSceneEventProgress();
@@ -294,8 +324,13 @@ namespace Unity.Netcode
         /// </summary>
         internal void TryFinishingSceneEventProgress()
         {
+            if (m_SceneEventFinished)
+            {
+                return;
+            }
             if (HasFinished() || HasTimedOut())
             {
+                m_SceneEventFinished = true;
                 // Don't attempt to finalize this scene event if we are no longer listening or a shutdown is in progress
                 if (IsNetworkSessionActive())
                 {

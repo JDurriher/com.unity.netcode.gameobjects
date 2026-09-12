@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Unity.Netcode.Editor
 {
     /// <summary>
-    /// Custom editor for the <see cref="NetworkPrefabsList"/> class.
+    /// The custom editor for the <see cref="NetworkPrefabsList"/> <see cref="ScriptableObject"/>.
     /// </summary>
     [CustomEditor(typeof(NetworkPrefabsList), true)]
     [CanEditMultipleObjects]
@@ -14,9 +14,6 @@ namespace Unity.Netcode.Editor
         private ReorderableList m_NetworkPrefabsList;
         private SerializedProperty m_IsDefaultBool;
 
-        /// <summary>
-        /// Initializes the custom editor when it is enabled.
-        /// </summary>
         private void OnEnable()
         {
             m_IsDefaultBool = serializedObject.FindProperty(nameof(NetworkPrefabsList.IsDefault));
@@ -88,9 +85,7 @@ namespace Unity.Netcode.Editor
             m_NetworkPrefabsList.drawHeaderCallback = rect => EditorGUI.LabelField(rect, "NetworkPrefabs");
         }
 
-        /// <summary>
-        /// Draws the custom inspector GUI for the NetworkPrefabsEditor.
-        /// </summary>
+        /// <inheritdoc />
         public override void OnInspectorGUI()
         {
             using (new EditorGUI.DisabledScope(true))

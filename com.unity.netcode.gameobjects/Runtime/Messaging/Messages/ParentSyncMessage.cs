@@ -6,32 +6,27 @@ namespace Unity.Netcode
     {
         public int Version => 0;
 
+        private const string k_Name = "ParentSyncMessage";
+
         public ulong NetworkObjectId;
 
-        private byte m_BitField;
+        private const byte k_WorldPositionStays = 0x01;
+        private const byte k_IsLatestParentSet = 0x02;
+        private const byte k_RemoveParent = 0x04;
+        private const byte k_AuthorityApplied = 0x08;
 
-        public bool WorldPositionStays
-        {
-            get => ByteUtility.GetBit(m_BitField, 0);
-            set => ByteUtility.SetBit(ref m_BitField, 0, value);
-        }
+        public bool WorldPositionStays;
 
         //If(Metadata.IsReparented)
-        public bool IsLatestParentSet
-        {
-            get => ByteUtility.GetBit(m_BitField, 1);
-            set => ByteUtility.SetBit(ref m_BitField, 1, value);
-        }
+        public bool IsLatestParentSet;
 
         //If(IsLatestParentSet)
         public ulong? LatestParent;
 
         // Is set when the parent should be removed (similar to IsReparented functionality but only for removing the parent)
-        public bool RemoveParent
-        {
-            get => ByteUtility.GetBit(m_BitField, 2);
-            set => ByteUtility.SetBit(ref m_BitField, 2, value);
-        }
+        public bool RemoveParent;
+
+        public bool AuthorityApplied;
 
         // These additional properties are used to synchronize clients with the current position,
         // rotation, and scale after parenting/de-parenting (world/local space relative). This
@@ -43,8 +38,16 @@ namespace Unity.Netcode
 
         public void Serialize(FastBufferWriter writer, int targetVersion)
         {
+
+            byte bitset = 0x00;
+            if (WorldPositionStays) { bitset |= k_WorldPositionStays; }
+            if (IsLatestParentSet) { bitset |= k_IsLatestParentSet; }
+            if (RemoveParent) { bitset |= k_RemoveParent; }
+            if (AuthorityApplied) { bitset |= k_AuthorityApplied; }
+
             BytePacker.WriteValueBitPacked(writer, NetworkObjectId);
-            writer.WriteValueSafe(m_BitField);
+            writer.WriteByteSafe(bitset);
+
             if (!RemoveParent)
             {
                 if (IsLatestParentSet)
@@ -62,13 +65,14 @@ namespace Unity.Netcode
         public bool Deserialize(FastBufferReader reader, ref NetworkContext context, int receivedMessageVersion)
         {
             var networkManager = (NetworkManager)context.SystemOwner;
-            if (!networkManager.IsClient)
-            {
-                return false;
-            }
 
             ByteUnpacker.ReadValueBitPacked(reader, out NetworkObjectId);
-            reader.ReadValueSafe(out m_BitField);
+            reader.ReadByteSafe(out byte bitset);
+            WorldPositionStays = (bitset & k_WorldPositionStays) != 0;
+            IsLatestParentSet = (bitset & k_IsLatestParentSet) != 0;
+            RemoveParent = (bitset & k_RemoveParent) != 0;
+            AuthorityApplied = (bitset & k_AuthorityApplied) != 0;
+
             if (!RemoveParent)
             {
                 if (IsLatestParentSet)
@@ -83,16 +87,17 @@ namespace Unity.Netcode
             reader.ReadValueSafe(out Rotation);
             reader.ReadValueSafe(out Scale);
 
+            // If the target NetworkObject does not exist then defer this message until it does.
             if (!networkManager.SpawnManager.SpawnedObjects.ContainsKey(NetworkObjectId))
             {
-                networkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnSpawn, NetworkObjectId, reader, ref context);
+                networkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnSpawn, NetworkObjectId, reader, ref context, k_Name);
                 return false;
             }
 
             // If the target parent does not exist, then defer this message until it does.
             if (LatestParent.HasValue && !networkManager.SpawnManager.SpawnedObjects.ContainsKey(LatestParent.Value))
             {
-                networkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnSpawn, LatestParent.Value, reader, ref context);
+                networkManager.DeferredMessageManager.DeferMessage(IDeferredNetworkMessageManager.TriggerType.OnSpawn, LatestParent.Value, reader, ref context, k_Name);
                 return false;
             }
 
@@ -103,9 +108,18 @@ namespace Unity.Netcode
         {
             var networkManager = (NetworkManager)context.SystemOwner;
             var networkObject = networkManager.SpawnManager.SpawnedObjects[NetworkObjectId];
+
+            // For either DA or Client-Server modes, parenting is only valid if the parent was owned by a different authority (i.e. AuthorityApplied) or the sender is from the owner (DA mode)
+            // or the server (client-server mode).
+            networkObject.AuthorityAppliedParenting = AuthorityApplied || context.SenderId == networkObject.OwnerClientId || context.SenderId == NetworkManager.ServerClientId;
+            if (!networkObject.AuthorityAppliedParenting && networkManager.LogLevel <= LogLevel.Normal)
+            {
+                NetworkLog.LogWarningServer($"Client-{context.SenderId} sent a ParentSyncMessage but is not the authority of {networkObject.gameObject.name}'s {nameof(NetworkObject)} component!");
+                // DANGO-TODO: Still determining if we should not apply this change (I am leaning towards not allowing it).
+            }
+
             networkObject.SetNetworkParenting(LatestParent, WorldPositionStays);
             networkObject.ApplyNetworkParenting(RemoveParent);
-
 
             // This check is primarily for client-server network topologies when the motion model is owner authoritative:
             // When SyncOwnerTransformWhenParented is enabled, then always apply the transform values.
@@ -116,30 +130,36 @@ namespace Unity.Netcode
                 // the values of the server-side post-parenting transform values
                 if (!WorldPositionStays)
                 {
-                    networkObject.transform.localPosition = Position;
-                    networkObject.transform.localRotation = Rotation;
+                    networkObject.transform.SetLocalPositionAndRotation(Position, Rotation);
                 }
                 else
                 {
-                    networkObject.transform.position = Position;
-                    networkObject.transform.rotation = Rotation;
+                    networkObject.transform.SetPositionAndRotation(Position, Rotation);
                 }
+                networkObject.transform.localScale = Scale;
             }
-            networkObject.transform.localScale = Scale;
 
-            // If client side parenting is enabled and this is the server instance, then notify the rest of the connected clients that parenting has taken place.
-            if (networkObject.AllowOwnerToParent && context.SenderId == networkObject.OwnerClientId && networkManager.IsServer)
+            // If in distributed authority mode and we are running a DAHost and this is the DAHost, then forward the parent changed message to any remaining clients
+            if ((networkManager.DistributedAuthorityMode && !networkManager.CMBServiceConnection && networkManager.DAHost) || (networkObject.AllowOwnerToParent && context.SenderId == networkObject.OwnerClientId && networkManager.IsServer))
             {
                 var size = 0;
                 var message = this;
+
                 foreach (var client in networkManager.ConnectedClients)
                 {
-                    if (client.Value.ClientId == networkObject.OwnerClientId || client.Value.ClientId == networkManager.LocalClientId || !networkObject.IsNetworkVisibleTo(client.Value.ClientId))
+                    if (client.Value.ClientId == networkObject.OwnerClientId || client.Value.ClientId == networkManager.LocalClientId)
                     {
                         continue;
                     }
-                    size = networkManager.ConnectionManager.SendMessage(ref message, NetworkDelivery.ReliableSequenced, client.Value.ClientId);
-                    networkManager.NetworkMetrics.TrackOwnershipChangeSent(client.Key, networkObject, size);
+                    if (networkObject.IsNetworkVisibleTo(client.Value.ClientId))
+                    {
+                        size = networkManager.ConnectionManager.SendMessage(ref message, NetworkDelivery.ReliableSequenced, client.Value.ClientId);
+                        networkManager.NetworkMetrics.TrackOwnershipChangeSent(client.Key, networkObject, size);
+                    }
+                    else
+                    {
+                        Debug.Log($"[DAHost][ParentingProxy] Client-{client.Value.ClientId} has no visibility to {networkObject.name}!");
+                    }
                 }
             }
         }

@@ -89,7 +89,7 @@ namespace Unity.Netcode
         /// <param name="value">the value to reset the NetworkVariable to (if none specified it resets to the default)</param>
         public void Reset(T value = default)
         {
-            if (m_NetworkBehaviour == null || m_NetworkBehaviour != null && !m_NetworkBehaviour.NetworkObject.IsSpawned)
+            if (m_NetworkBehaviour == null || m_NetworkObject == null || !m_NetworkObject.IsSpawned)
             {
                 m_InternalValue = value;
                 NetworkVariableSerialization<T>.Duplicate(m_InternalValue, ref m_LastInternalValue);
@@ -148,7 +148,7 @@ namespace Unity.Netcode
             get => m_InternalValue;
             set
             {
-                if (CannotWrite)
+                if (CannotWrite())
                 {
                     LogWritePermissionError();
                     return;
@@ -171,18 +171,18 @@ namespace Unity.Netcode
         /// Invoke this method to check if a collection's items are dirty.
         /// The default behavior is to exit early if the <see cref="NetworkVariable{T}"/> is already dirty.
         /// </summary>
-        /// <param name="forceCheck"> when true, this check will force a full item collection check even if the NetworkVariable is already dirty</param>
-        /// <returns>True if the variable is dirty and needs synchronization, false if clean or client lacks write permissions</returns>
         /// <remarks>
         /// This is to be used as a way to check if a <see cref="NetworkVariable{T}"/> containing a managed collection has any changees to the collection items.<br />
         /// If you invoked this when a collection is dirty, it will not trigger the <see cref="OnValueChanged"/> unless you set forceCheck param to true. <br />
         /// </remarks>
+        /// <param name="forceCheck"> when true, this check will force a full item collection check even if the NetworkVariable is already dirty</param>
+        /// <returns>True if the variable is dirty and needs synchronization, false otherwise</returns>
         public bool CheckDirtyState(bool forceCheck = false)
         {
             var isDirty = base.IsDirty();
 
             // A client without permissions invoking this method should only check to assure the current value is equal to the last known current value
-            if (CannotWrite)
+            if (CannotWrite())
             {
                 // If modifications are detected, then revert back to the last known current value
                 if (!NetworkVariableSerialization<T>.AreEqual(ref m_InternalValue, ref m_LastInternalValue))
@@ -225,26 +225,29 @@ namespace Unity.Netcode
             }
 
             m_IsDisposed = true;
+            // Dispose the internal value
             if (m_InternalValue is IDisposable internalValueDisposable)
             {
                 internalValueDisposable.Dispose();
             }
-
             m_InternalValue = default;
 
+            // Dispose the internal original value
             if (m_LastInternalValue is IDisposable internalOriginalValueDisposable)
             {
                 internalOriginalValueDisposable.Dispose();
             }
             m_LastInternalValue = default;
 
+            // Dispose the previous value if there is one
             if (m_HasPreviousValue && m_PreviousValue is IDisposable previousValueDisposable)
             {
                 m_HasPreviousValue = false;
                 previousValueDisposable.Dispose();
             }
-
             m_PreviousValue = default;
+
+            base.Dispose();
         }
 
         /// <summary>
@@ -263,12 +266,11 @@ namespace Unity.Netcode
         {
             // If the client does not have write permissions but the internal value is determined to be locally modified and we are applying updates, then we should revert
             // to the original collection value prior to applying updates (primarily for collections).
-            if (!NetworkUpdaterCheck && CannotWrite && !NetworkVariableSerialization<T>.AreEqual(ref m_InternalValue, ref m_LastInternalValue))
+            if (!NetworkUpdaterCheck && CannotWrite() && !NetworkVariableSerialization<T>.AreEqual(ref m_InternalValue, ref m_LastInternalValue))
             {
                 NetworkVariableSerialization<T>.Duplicate(m_LastInternalValue, ref m_InternalValue);
                 return true;
             }
-
             // For most cases we can use the dirty flag.
             // This doesn't work for cases where we're wrapping more complex types
             // like INetworkSerializable, NativeList, NativeArray, etc.
@@ -281,7 +283,6 @@ namespace Unity.Netcode
             }
 
             var dirty = !NetworkVariableSerialization<T>.AreEqual(ref m_PreviousValue, ref m_InternalValue);
-
             // Cache the dirty value so we don't perform this again if we already know we're dirty
             // Unfortunately we can't cache the NOT dirty state, because that might change
             // in between to checks... but the DIRTY state won't change until ResetDirty()
@@ -310,18 +311,6 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Sets the <see cref="Value"/>, marks the <see cref="NetworkVariable{T}"/> dirty, and invokes the <see cref="OnValueChanged"/> callback
-        /// if there are subscribers to that event.
-        /// </summary>
-        /// <param name="value">the new value of type `T` to be set/></param>
-        private protected void Set(T value)
-        {
-            SetDirty(true);
-            m_InternalValue = value;
-            OnValueChanged?.Invoke(m_PreviousValue, m_InternalValue);
-        }
-
-        /// <summary>
         /// Writes the variable to the writer
         /// </summary>
         /// <param name="writer">The stream to write the value to</param>
@@ -339,7 +328,7 @@ namespace Unity.Netcode
         {
             // If the client does not have write permissions but the internal value is determined to be locally modified and we are applying updates, then we should revert
             // to the original collection value prior to applying updates (primarily for collections).
-            if (CannotWrite && !NetworkVariableSerialization<T>.AreEqual(ref m_LastInternalValue, ref m_InternalValue))
+            if (CannotWrite() && !NetworkVariableSerialization<T>.AreEqual(ref m_LastInternalValue, ref m_InternalValue))
             {
                 NetworkVariableSerialization<T>.Duplicate(m_LastInternalValue, ref m_InternalValue);
             }
@@ -355,6 +344,7 @@ namespace Unity.Netcode
             {
                 SetDirty(true);
             }
+
             OnValueChanged?.Invoke(m_PreviousValue, m_InternalValue);
         }
 
@@ -380,7 +370,7 @@ namespace Unity.Netcode
         {
             // If the client does not have write permissions but the internal value is determined to be locally modified and we are applying updates, then we should revert
             // to the original collection value prior to applying updates (primarily for collections).
-            if (CannotWrite && !NetworkVariableSerialization<T>.AreEqual(ref m_LastInternalValue, ref m_InternalValue))
+            if (CannotWrite() && !NetworkVariableSerialization<T>.AreEqual(ref m_LastInternalValue, ref m_InternalValue))
             {
                 NetworkVariableSerialization<T>.Duplicate(m_LastInternalValue, ref m_InternalValue);
             }

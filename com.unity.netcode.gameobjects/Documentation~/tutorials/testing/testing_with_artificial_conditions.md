@@ -11,11 +11,11 @@ This is challenging when we are [iterating on our game locally](testing_locally.
 
 Thankfully there are a number of tools that can simulate adverse network conditions.
 
-For testing locally within the Editor, you can use the [Network Simulator tool](https://docs-multiplayer.unity3d.com/tools/current/tools-network-simulator/) along with [clone-based workflow via ParrelSync](testing_locally.md#parrelsync).
+For testing locally within the Editor, you can use the [Network Simulator tool](https://docs-multiplayer.unity3d.com/tools/current/tools-network-simulator/) along with [clone-based workflow via ParrelSync](#clone-based-workflow-parrelsync).
 
 For testing development builds with built-in artificial latency we suggest using [Network Simulator tools with some custom code to inject artificial conditions into the build](#debug-builds).
 
-For testing release builds we suggest using [Clumsy](#clumsy-windows) if you're on Windows and Network Link Conditioner if you're on [macOS](#network-link-conditioner-mac-os) or [iOS](#network-link-conditioner-ios). A scriptable alternative to Network Link Conditioner on macOS is [dummynet](#dummynet-dnctl-and-pftcl-mac-os), which offers great control and comes packaged with the operating system.
+For testing release builds we suggest using [Clumsy](#clumsy-windows) if you're on Windows and Network Link Conditioner if you're on [macOS](#network-link-conditioner-macos) or [iOS](#network-link-conditioner-ios). A scriptable alternative to Network Link Conditioner on macOS is [dummynet](#dummynet-dnctl-and-pftcl-macos), which offers great control and comes packaged with the operating system.
 
 > [!NOTE]
 > While artificial latency is great for simulating network conditions during development - it won't accurately emulate real world conditions. We recommend to test your game often on the targeted platforms and real live networking conditions.
@@ -49,7 +49,7 @@ Adding packet loss, apart from introducing even more effective delay to our syst
 
 ### Different network conditions for different peers
 
-[Clumsy](#clumsy-on-windows), [Network Link Conditioner](#network-link-conditioner-mac-os) and [dummynet](#dummynet-dnctl-and-pftcl-mac-os) are introducing changes on OS level, thus all the instances of the game that we open on our local machine would run under the same network conditions.
+[Clumsy](#clumsy-windows), [Network Link Conditioner](#network-link-conditioner-macos) and [dummynet](#dummynet-dnctl-and-pftcl-macos) are introducing changes on OS level, thus all the instances of the game that we open on our local machine would run under the same network conditions.
 
 Don't forget to disable it once you're done debugging, else your network connection will feel slow!
 
@@ -65,7 +65,7 @@ In this case we would want to have an ability to set artificial conditions on a 
 > ParallelSync is **not** supported by Unity.  More information on its usage is available [here](https://github.com/VeriorPies/ParrelSync). Troubleshooting information can be found [here](https://github.com/VeriorPies/ParrelSync/wiki/Troubleshooting-&-FAQs)
 
 
-Simulator Tools effects only apply to editor instances and to [debug builds](#debug-builds), as such it matches well with [clone-based workflow via ParrelSync](testing_locally.md#parrelsync).
+Simulator Tools effects only apply to editor instances and to [debug builds](#debug-builds), as such it matches well with [clone-based workflow via ParrelSync](#clone-based-workflow-parrelsync).
 
 Other tools should be used when testing release builds locally.
 
@@ -78,7 +78,7 @@ To combine the benefits of Simulator Tools Window with ParrelSync - create or op
 
 Debug builds do allow for the possibility of applying artificial network conditions to the Unity Transport driver, but the Simulator Tools window itself only sets these values in the Editor.
 
-To set the latency, jitter and packet-loss percentage values for develop builds we need the following code to execute before `NetworkManager` attempts to connect (changing the values of the parameters as desired):
+To set the latency, jitter and packet-loss percentage values for develop builds we need the following code to execute before NetworkManager attempts to connect (changing the values of the parameters as desired):
 
 ```
 #if DEVELOPMENT_BUILD && !UNITY_EDITOR
@@ -133,7 +133,7 @@ Apple's Network Link Conditioner can be downloaded from the [Additional Tools fo
 Download the version that's appropriate for your XCode version and then run the .dmg file. Navigate to the `Hardware` folder and install the Network Link Conditioner panel.
 
 After that you will be able to find Network Link Conditioner in the System Preferences panel of your Mac:
-![nlc-in-system-preferences](../images/nlc-in-system-preferences.png)
+![nlc-in-system-preferences](../../images/nlc-in-system-preferences.png)
 
 To test the builds with Network Link Conditioner:
  - Run Network Link Conditioner

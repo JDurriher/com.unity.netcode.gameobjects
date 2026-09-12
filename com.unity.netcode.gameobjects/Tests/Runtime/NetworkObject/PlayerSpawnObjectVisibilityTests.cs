@@ -13,6 +13,7 @@ namespace Unity.Netcode.RuntimeTests
     internal class PlayerSpawnObjectVisibilityTests : NetcodeIntegrationTest
     {
         protected override int NumberOfClients => 0;
+
         public enum PlayerSpawnStages
         {
             OnNetworkSpawn,
@@ -48,7 +49,7 @@ namespace Unity.Netcode.RuntimeTests
 
             private void ShowToClient(PlayerSpawnStages currentStage)
             {
-                if (!IsServer || Stage != currentStage)
+                if (!HasAuthority || Stage != currentStage)
                 {
                     return;
                 }
@@ -112,7 +113,7 @@ namespace Unity.Netcode.RuntimeTests
             yield return new WaitForSeconds(0.5f);
 
             NetcodeLogAssert.LogWasNotReceived(LogType.Warning, new Regex("but it is already in the spawned list!"));
-            var client = m_ClientNetworkManagers[0];
+            var client = GetNonAuthorityNetworkManager();
             Assert.True(client.LocalClient.PlayerObject != null, $"Client-{client.LocalClientId} does not have a player object!");
         }
     }

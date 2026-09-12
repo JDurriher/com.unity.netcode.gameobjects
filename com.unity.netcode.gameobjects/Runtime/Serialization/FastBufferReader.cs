@@ -20,7 +20,7 @@ namespace Unity.Netcode
             internal int Position;
             internal int Length;
             internal Allocator Allocator;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             internal int AllowedReadMark;
             internal bool InBitwiseContext;
 #endif
@@ -55,7 +55,7 @@ namespace Unity.Netcode
         internal unsafe void CommitBitwiseReads(int amount)
         {
             Handle->Position += amount;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->InBitwiseContext = false;
 #endif
         }
@@ -83,7 +83,7 @@ namespace Unity.Netcode
             // When we dispose, we are really only interested in disposing Allocator.Persistent and Allocator.TempJob
             // as disposing Allocator.Temp and Allocator.None would do nothing. Therefore, make sure we dispose the readerHandle with the right Allocator label
             readerHandle->Allocator = copyAllocator == Allocator.None ? internalAllocator : copyAllocator;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             readerHandle->AllowedReadMark = 0;
             readerHandle->InBitwiseContext = false;
 #endif
@@ -136,7 +136,6 @@ namespace Unity.Netcode
             }
             fixed (byte* data = buffer.Array)
             {
-
                 Handle = CreateHandle(data, length == -1 ? buffer.Count : length, offset, copyAllocator, Allocator.Temp);
             }
         }
@@ -294,6 +293,11 @@ namespace Unity.Netcode
         /// </summary>
         public unsafe void Dispose()
         {
+            if (Handle == null)
+            {
+                return;
+            }
+
             UnsafeUtility.Free(Handle, Handle->Allocator);
             Handle = null;
         }
@@ -317,7 +321,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void MarkBytesRead(int amount)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -339,7 +343,7 @@ namespace Unity.Netcode
         /// <returns>A BitReader</returns>
         public unsafe BitReader EnterBitwiseContext()
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->InBitwiseContext = true;
 #endif
             return new BitReader(this);
@@ -362,7 +366,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryBeginRead(int bytes)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -373,7 +377,7 @@ namespace Unity.Netcode
             {
                 return false;
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->AllowedReadMark = Handle->Position + bytes;
 #endif
             return true;
@@ -397,7 +401,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryBeginReadValue<T>(in T value) where T : unmanaged
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -409,7 +413,7 @@ namespace Unity.Netcode
             {
                 return false;
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             Handle->AllowedReadMark = Handle->Position + len;
 #endif
             return true;
@@ -425,7 +429,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe bool TryBeginReadInternal(int bytes)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -436,7 +440,7 @@ namespace Unity.Netcode
             {
                 return false;
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->Position + bytes > Handle->AllowedReadMark)
             {
                 Handle->AllowedReadMark = Handle->Position + bytes;
@@ -560,15 +564,37 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Reads a string
-        /// NOTE: ALLOCATES
+        /// Validates the string's total byte count based on whether we are
+        /// using one or two byte characters.
         /// </summary>
-        /// <param name="s">Stores the read string</param>
-        /// <param name="oneByteChars">Whether or not to use one byte per character. This will only allow ASCII</param>
-        public unsafe void ReadValue(out string s, bool oneByteChars = false)
+        /// <remarks>
+        /// Will throw an overflow exception if the size is greater than <see cref="int.MaxValue"/>.
+        /// </remarks>
+        /// <param name="length">Character count</param>
+        /// <param name="oneByteChars">If false(default) 2 byte characters and if true 1 byte characters</param>
+        /// <returns>total size in bytes to read</returns>
+        /// <exception cref="OverflowException"></exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int ValidateStringByteCount(int length, bool oneByteChars)
         {
-            ReadValue(out uint length);
-            s = "".PadRight((int)length);
+            var readSize = oneByteChars ? length : length * sizeof(char);
+            if (int.MaxValue < (uint)readSize)
+            {
+                throw new OverflowException($"Invalid reader position detected when trying to read a string of size {(uint)readSize}! This can result from an error in the serialization. Ensure deserialization exactly matches what was serialized!");
+            }
+            return readSize;
+        }
+
+        /// <summary>
+        /// Commonly shared string read method between <see cref="ReadValue"/>.
+        /// </summary>
+        /// <param name="s">The output of the string read.</param>
+        /// <param name="length">The number of characters in the string.</param>
+        /// <param name="oneByteChars">If false(default) 2 byte characters and if true 1 byte characters.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void ReadString(out string s, int length, bool oneByteChars)
+        {
+            s = "".PadRight(length);
             int target = s.Length;
             fixed (char* native = s)
             {
@@ -588,52 +614,73 @@ namespace Unity.Netcode
         }
 
         /// <summary>
-        /// Reads a string.
-        /// NOTE: ALLOCATES
-        ///
-        /// "Safe" version - automatically performs bounds checking. Less efficient than bounds checking
-        /// for multiple reads at once by calling TryBeginRead.
+        /// Reads a string without bounds checking.
+        /// NOTE: This method ALLOCATES memory.
         /// </summary>
+        /// <remarks>
+        /// This is the un-safe string read which requires invoking <see cref="TryBeginRead(int)"/> prior to invoking this method.<br />
+        /// Using one byte characters only allows ASCII characters.
+        /// </remarks>
         /// <param name="s">Stores the read string</param>
-        /// <param name="oneByteChars">Whether or not to use one byte per character. This will only allow ASCII</param>
+        /// <param name="oneByteChars">If false(default) 2 byte characters and if true 1 byte characters.</param>
+        public unsafe void ReadValue(out string s, bool oneByteChars = false)
+        {
+            ReadLength(out int length);
+
+            // Validate the string's byte count based on the character count.
+            ValidateStringByteCount(length, oneByteChars);
+
+            // Read the string
+            ReadString(out s, length, oneByteChars);
+        }
+
+        /// <summary>
+        /// Reads a string after it performs bounds checking automatically.
+        /// NOTE: This method ALLOCATES memory.
+        /// </summary>
+        /// <remarks>
+        /// This is the safe string read which invokes <see cref = "TryBeginReadInternal(int)"/> prior to reading the string.<br />
+        /// Using one byte characters only allows ASCII characters.
+        /// </remarks>
+        /// <param name="s">The string re the read string</param>
+        /// <param name="oneByteChars">If false(default) 2 byte characters and if true 1 byte characters.</param>
         public unsafe void ReadValueSafe(out string s, bool oneByteChars = false)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
-            if (Handle->InBitwiseContext)
-            {
-                throw new InvalidOperationException(
-                    "Cannot use BufferReader in bytewise mode while in a bitwise context.");
-            }
-#endif
+            ReadLengthSafe(out int length);
 
-            if (!TryBeginReadInternal(sizeof(uint)))
+            // Validate the string's byte count based on the character count and if it is valid begin reading based on the returned
+            // byte count.
+            if (!TryBeginReadInternal(ValidateStringByteCount(length, oneByteChars)))
             {
                 throw new OverflowException("Reading past the end of the buffer");
             }
 
-            ReadValue(out uint length);
+            // Read the string
+            ReadString(out s, length, oneByteChars);
+        }
 
-            if (!TryBeginReadInternal((int)length * (oneByteChars ? 1 : sizeof(char))))
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReadLengthSafe(out uint length) => ReadUnmanagedSafe(out length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReadLength(out uint length) => ReadUnmanaged(out length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReadLengthSafe(out int length)
+        {
+            ReadLengthSafe(out uint temp);
+            if (temp > int.MaxValue)
             {
-                throw new OverflowException("Reading past the end of the buffer");
+                throw new InvalidCastException("length value outside of int32 range");
             }
-            s = "".PadRight((int)length);
-            int target = s.Length;
-            fixed (char* native = s)
-            {
-                if (oneByteChars)
-                {
-                    for (int i = 0; i < target; ++i)
-                    {
-                        ReadByte(out byte b);
-                        native[i] = (char)b;
-                    }
-                }
-                else
-                {
-                    ReadBytes((byte*)native, target * sizeof(char));
-                }
-            }
+            length = (int)temp;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReadLength(out int length)
+        {
+            ReadLength(out uint temp);
+            length = (int)temp;
         }
 
         /// <summary>
@@ -648,7 +695,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void ReadPartialValue<T>(out T value, int bytesToRead, int offsetBytes = 0) where T : unmanaged
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -660,7 +707,7 @@ namespace Unity.Netcode
             }
 #endif
 
-            var val = new T();
+            var val = default(T);
             byte* ptr = ((byte*)&val) + offsetBytes;
             byte* bufferPointer = Handle->BufferPointer + Handle->Position;
             UnsafeUtility.MemCpy(ptr, bufferPointer, bytesToRead);
@@ -676,7 +723,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void ReadByte(out byte value)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -700,7 +747,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void ReadByteSafe(out byte value)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -724,7 +771,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void ReadBytes(byte* value, int size, int offset = 0)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -751,7 +798,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void ReadBytesSafe(byte* value, int size, int offset = 0)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if DEBUG
             if (Handle->InBitwiseContext)
             {
                 throw new InvalidOperationException(
@@ -821,7 +868,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanaged<T>(out T[] value) where T : unmanaged
         {
-            ReadUnmanaged(out int sizeInTs);
+            ReadLength(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value = new T[sizeInTs];
             fixed (T* ptr = value)
@@ -833,7 +880,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanagedSafe<T>(out T[] value) where T : unmanaged
         {
-            ReadUnmanagedSafe(out int sizeInTs);
+            ReadLengthSafe(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value = new T[sizeInTs];
             fixed (T* ptr = value)
@@ -845,7 +892,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanaged<T>(out NativeArray<T> value, Allocator allocator) where T : unmanaged
         {
-            ReadUnmanaged(out int sizeInTs);
+            ReadLength(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value = new NativeArray<T>(sizeInTs, allocator);
             byte* bytes = (byte*)value.GetUnsafePtr();
@@ -854,7 +901,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanagedSafe<T>(out NativeArray<T> value, Allocator allocator) where T : unmanaged
         {
-            ReadUnmanagedSafe(out int sizeInTs);
+            ReadLengthSafe(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value = new NativeArray<T>(sizeInTs, allocator);
             byte* bytes = (byte*)value.GetUnsafePtr();
@@ -864,7 +911,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanagedInPlace<T>(ref NativeList<T> value) where T : unmanaged
         {
-            ReadUnmanaged(out int sizeInTs);
+            ReadLength(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value.Resize(sizeInTs, NativeArrayOptions.UninitializedMemory);
             byte* bytes = (byte*)value.GetUnsafePtr();
@@ -873,7 +920,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void ReadUnmanagedSafeInPlace<T>(ref NativeList<T> value) where T : unmanaged
         {
-            ReadUnmanagedSafe(out int sizeInTs);
+            ReadLengthSafe(out int sizeInTs);
             int sizeInBytes = sizeInTs * sizeof(T);
             value.Resize(sizeInTs, NativeArrayOptions.UninitializedMemory);
             byte* bytes = (byte*)value.GetUnsafePtr();
@@ -1122,7 +1169,7 @@ namespace Unity.Netcode
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ReadValueSafeInPlace<T>(ref NativeHashSet<T> value) where T : unmanaged, IEquatable<T>
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value.Clear();
             for (var i = 0; i < length; ++i)
             {
@@ -1137,7 +1184,7 @@ namespace Unity.Netcode
             where TKey : unmanaged, IEquatable<TKey>
             where TVal : unmanaged
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value.Clear();
             for (var i = 0; i < length; ++i)
             {
@@ -1631,7 +1678,7 @@ namespace Unity.Netcode
         /// This method is a little difficult to use, since you have to know the size of the string before
         /// reading it, but is useful when the string is a known, fixed size. Note that the size of the
         /// string is also encoded, so the size to call TryBeginRead on is actually the fixed size (in bytes)
-        /// plus sizeof(int)
+        /// plus sizeof(uint)
         /// </summary>
         /// <param name="value">the value to read</param>
         /// <param name="unused">An unused parameter used for enabling overload resolution based on generic constraints</param>
@@ -1640,7 +1687,7 @@ namespace Unity.Netcode
         public unsafe void ReadValue<T>(out T value, FastBufferWriter.ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanaged(out int length);
+            ReadLength(out int length);
             value = new T
             {
                 Length = length
@@ -1662,7 +1709,7 @@ namespace Unity.Netcode
         public unsafe void ReadValueSafe<T>(out T value, FastBufferWriter.ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value = new T
             {
                 Length = length
@@ -1684,7 +1731,7 @@ namespace Unity.Netcode
         public unsafe void ReadValueSafeInPlace<T>(ref T value, FastBufferWriter.ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value.Length = length;
             ReadBytesSafe(value.GetUnsafePtr(), length);
         }
@@ -1702,7 +1749,7 @@ namespace Unity.Netcode
         public unsafe void ReadValueSafe<T>(out NativeArray<T> value, Allocator allocator)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value = new NativeArray<T>(length, allocator);
             var ptr = (T*)value.GetUnsafePtr();
             for (var i = 0; i < length; ++i)
@@ -1723,7 +1770,7 @@ namespace Unity.Netcode
         public unsafe void ReadValueSafeTemp<T>(out NativeArray<T> value)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value = new NativeArray<T>(length, Allocator.Temp);
             var ptr = (T*)value.GetUnsafePtr();
             for (var i = 0; i < length; ++i)
@@ -1745,7 +1792,7 @@ namespace Unity.Netcode
         public void ReadValueSafe<T>(out T[] value, FastBufferWriter.ForFixedStrings unused = default)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value = new T[length];
             for (var i = 0; i < length; ++i)
             {
@@ -1766,7 +1813,7 @@ namespace Unity.Netcode
         public void ReadValueSafeInPlace<T>(ref NativeList<T> value)
             where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
-            ReadUnmanagedSafe(out int length);
+            ReadLengthSafe(out int length);
             value.Resize(length, NativeArrayOptions.UninitializedMemory);
             for (var i = 0; i < length; ++i)
             {

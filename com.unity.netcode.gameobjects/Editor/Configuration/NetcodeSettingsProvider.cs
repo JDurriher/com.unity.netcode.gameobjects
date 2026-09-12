@@ -19,7 +19,7 @@ namespace Unity.Netcode.Editor.Configuration
         {
             // First parameter is the path in the Settings window.
             // Second parameter is the scope of this setting: it only appears in the Settings window for the Project scope.
-            var provider = new SettingsProvider("Project/NetcodeForGameObjects", SettingsScope.Project)
+            var provider = new SettingsProvider("Project/Multiplayer/NetcodeForGameObjects", SettingsScope.Project)
             {
                 label = "Netcode for GameObjects",
                 keywords = new[] { "netcode", "editor" },
@@ -36,7 +36,7 @@ namespace Unity.Netcode.Editor.Configuration
             if (settings.TempNetworkPrefabsPath != settings.NetworkPrefabsPath)
             {
                 var newPath = settings.TempNetworkPrefabsPath;
-                if (newPath == "")
+                if (newPath.Length == 0)
                 {
                     newPath = NetcodeForGameObjectsProjectSettings.DefaultNetworkPrefabsPath;
                     settings.TempNetworkPrefabsPath = newPath;
@@ -128,6 +128,7 @@ namespace Unity.Netcode.Editor.Configuration
             var autoAddNetworkObjectSetting = NetcodeForGameObjectsEditorSettings.GetAutoAddNetworkObjectSetting();
             var checkForNetworkObjectSetting = NetcodeForGameObjectsEditorSettings.GetCheckForNetworkObjectSetting();
             var multiplayerToolsTipStatus = NetcodeForGameObjectsEditorSettings.GetNetcodeInstallMultiplayerToolTips() == 0;
+
             var settings = NetcodeForGameObjectsProjectSettings.instance;
             var generateDefaultPrefabs = settings.GenerateDefaultNetworkPrefabs;
             var networkPrefabsPath = settings.TempNetworkPrefabsPath;
@@ -141,6 +142,7 @@ namespace Unity.Netcode.Editor.Configuration
             {
                 GUILayout.BeginVertical("Box");
                 NetworkObjectsSectionLabel.DrawLabel();
+
                 autoAddNetworkObjectSetting = AutoAddNetworkObjectToggle.DrawToggle(autoAddNetworkObjectSetting, checkForNetworkObjectSetting);
                 checkForNetworkObjectSetting = CheckForNetworkObjectToggle.DrawToggle(checkForNetworkObjectSetting);
                 if (autoAddNetworkObjectSetting && !checkForNetworkObjectSetting)
